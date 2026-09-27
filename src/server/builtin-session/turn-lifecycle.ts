@@ -588,7 +588,15 @@ export function createBuiltinTurnLifecycle(deps: BuiltinTurnLifecycleDeps): Buil
       ) {
         terminalRecoveryReason = 'image';
       }
-      if (rawError.includes('No conversation found')) {
+      // Claude Code uses two equivalent diagnostics when the persisted native
+      // conversation has lost the resume anchor: older builds say
+      // "No conversation found", while newer builds identify the missing
+      // message UUID explicitly. Both mean the SDK cannot continue the
+      // native session and should use the in-place stale-session recovery.
+      if (
+        rawError.includes('No conversation found')
+        || rawError.includes('No message found with message.uuid')
+      ) {
         terminalRecoveryReason = 'stale';
       }
       if (peekPendingOutputOwner()?.requestId && isAbortResult) {

@@ -476,7 +476,7 @@ describe('turn-lifecycle owner', () => {
     });
   });
 
-  it('surfaces missing native anchors instead of silently replaying with full history', async () => {
+  it('recovers when the native session lost a saved message anchor', async () => {
     const { deps, broadcasts } = makeDeps();
     const lifecycle = createBuiltinTurnLifecycle(deps);
     await lifecycle.handleSdkResult(makeResult({
@@ -485,7 +485,7 @@ describe('turn-lifecycle owner', () => {
       errors: ['No message found with message.uuid of: rejected-anchor'], terminal_reason: 'error',
     }));
     expect(broadcasts.map(item => item.event)).toContain('chat:agent-error');
-    expect(deps.handleTerminalRecovery).toHaveBeenCalledWith(undefined);
+    expect(deps.handleTerminalRecovery).toHaveBeenCalledWith('stale');
   });
 
 
