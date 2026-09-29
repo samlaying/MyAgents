@@ -3842,20 +3842,24 @@ export default function App() {
       window.removeEventListener(CUSTOM_EVENTS.OPEN_SPACE, handleOpenSpace);
   }, [handleOpenSpace]);
 
-  // All Task discussion entry points converge here. The visible user text is
-  // carried after a hidden product reminder, while the exact app-owned Skill
-  // contract is admitted again at the moment the first turn is dispatched.
+  // Task discussions and learning-card chats converge on the existing Chat
+  // birth path; only Task discussions prepare TaskStore context and require
+  // the task-alignment Skill.
   const handleStartTaskDiscussion = useCallback(
     async ({
       sourceRecordId,
       sourceRecordKind = 'text',
       content,
       workspaceId,
+      learningMode = false,
+      chatTitle,
     }: {
       sourceRecordId?: string;
       sourceRecordKind?: 'text' | 'audio';
       content?: string;
       workspaceId?: string;
+      learningMode?: boolean;
+      chatTitle?: string;
     }): Promise<boolean> => {
       if (sourceRecordKind === 'audio' && !sourceRecordId) {
         toastRef.current?.error(t('appChrome.recordDiscussionDocumentFailed'));
@@ -3914,7 +3918,7 @@ export default function App() {
           return false;
         }
 
-        if (!isTauriEnvironment()) {
+        if (!learningMode && !isTauriEnvironment()) {
           throw new Error('Task discussion requires the desktop Task store');
         }
         const sourceRecordDiscussionContext =
@@ -3927,28 +3931,31 @@ export default function App() {
                 }>;
               }>('cmd_record_discussion_context', { id: sourceRecordId })
             : undefined;
-        const discussionId = `discussion-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-        const prepared = await tauriInvoke<PreparedTaskDiscussion>(
-          'cmd_task_prepare_discussion',
-          {
-            discussionId,
+        let discussionPrompt = content ?? '';
+        if (!learningMode) {
+          const discussionId = `discussion-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+          const prepared = await tauriInvoke<PreparedTaskDiscussion>(
+            'cmd_task_prepare_discussion',
+            {
+              discussionId,
+              workspaceId: workspace.id,
+              workspacePath: workspace.path,
+              sourceRecordId: sourceRecordId || undefined,
+            },
+          );
+          discussionPrompt = buildTaskDiscussionReminder({
+            candidatesDir: prepared.candidatesDir,
             workspaceId: workspace.id,
             workspacePath: workspace.path,
             sourceRecordId: sourceRecordId || undefined,
-          },
-        );
-        const discussionPrompt = buildTaskDiscussionReminder({
-          candidatesDir: prepared.candidatesDir,
-          workspaceId: workspace.id,
-          workspacePath: workspace.path,
-          sourceRecordId: sourceRecordId || undefined,
-          sourceRecordAudioPaths: sourceRecordDiscussionContext?.audioSources,
-          sourceRecordDocumentPath: sourceRecordDiscussionContext?.documentPath,
-          visibleUserMessage:
-            sourceRecordKind === 'audio'
-              ? '请完整读取 sourceRecordDocumentPath 指向的录音文稿。文稿包含转写内容、说话人信息、现场笔记和重点标记。请以文件中的当前内容为准，理解记录并与我进一步讨论；如需核对原始声音，可读取 sourceRecordAudioPaths 中列出的音频文件。'
-              : (content ?? ''),
-        });
+            sourceRecordAudioPaths: sourceRecordDiscussionContext?.audioSources,
+            sourceRecordDocumentPath: sourceRecordDiscussionContext?.documentPath,
+            visibleUserMessage:
+              sourceRecordKind === 'audio'
+                ? '请完整读取 sourceRecordDocumentPath 指向的录音文稿。文稿包含转写内容、说话人信息、现场笔记和重点标记。请以文件中的当前内容为准，理解记录并与我进一步讨论；如需核对原始声音，可读取 sourceRecordAudioPaths 中列出的音频文件。'
+                : content ?? '',
+          });
+        }
 
         const alignmentProviderIntent =
           sel && isRuntimeBackedProvider(sel.provider)
@@ -3965,7 +3972,7 @@ export default function App() {
         });
         const initialMessage: InitialMessage = {
           text: discussionPrompt,
-          requiredSystemSkill: TASK_ALIGNMENT_SKILL_REQUIREMENT,
+          ...(!learningMode ? { requiredSystemSkill: TASK_ALIGNMENT_SKILL_REQUIREMENT } : {}),
           ...(alignmentPermissionMode
             ? { permissionMode: alignmentPermissionMode }
             : {}),
@@ -4000,7 +4007,7 @@ export default function App() {
             view: 'chat' as const,
             agentDir: workspace.path,
             sessionId: createPendingSessionId(newTab.id),
-            title: t('appChrome.discussionTabTitle'),
+            title: chatTitle ?? t('appChrome.discussionTabTitle'),
             initialMessage,
             sidecarConfigDisposition: 'pending',
           };
@@ -4010,17 +4017,15 @@ export default function App() {
 
         const launched = await handleLaunchProject(workspace, initialMessage, {
           surface: 'task_center',
-          entryIntent: 'thought_alignment',
+          entryIntent: learningMode ? 'send_message' : 'thought_alignment',
         });
         if (!launched) return false;
 
         // handleLaunchProject's internal controller update overwrites `title` with the
-        // workspace display name. Restore the "任务讨论" title afterwards so
-        // the tab consistently reads as a discussion session, not the
-        // workspace's generic name.
+        // workspace display name. Restore the originating discussion or lesson title.
         tabWorkspaceController.update(newTab.id, 'chat', (tab) => ({
           ...tab,
-          title: t('appChrome.discussionTabTitle'),
+          title: chatTitle ?? t('appChrome.discussionTabTitle'),
         }));
         return true;
       } catch (err) {
