@@ -8,6 +8,18 @@ import { afterEach, beforeEach } from 'vitest';
 
 import { i18n } from '@/i18n';
 
+// Node's Web Storage globals can mask jsdom's Storage (localStorage is
+// undefined without --localstorage-file). Bind the real jsdom implementations
+// instead of using Node's process-scoped storage or a reduced storage mock.
+const domWindow = (globalThis as typeof globalThis & { jsdom: { window: Window } }).jsdom.window;
+for (const name of ['localStorage', 'sessionStorage'] as const) {
+  Object.defineProperty(globalThis, name, {
+    configurable: true,
+    writable: true,
+    value: domWindow[name],
+  });
+}
+
 // jsdom lacks ResizeObserver, which several components (CollapsibleContent,
 // MessageList, editors) construct in effects. Provide a no-op stub so rendering
 // them under jsdom doesn't throw. Tests that assert on observed sizes mock it
