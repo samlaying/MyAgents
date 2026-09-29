@@ -86,6 +86,7 @@ export const CUSTOM_EVENTS = {
     OPEN_TASK_CENTER: 'open-task-center',
     /** Fired to open App's singleton Task creation overlay. */
     OPEN_TASK_CREATE: 'open-task-create',
+    LEARNING_DAILY_TASK_CREATED: 'learning-daily-task-created',
     /** Fired to open the Team Space singleton tab when the build/runtime gates allow it. */
     OPEN_SPACE: 'open-space',
     /**

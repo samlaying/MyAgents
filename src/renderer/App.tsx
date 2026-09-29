@@ -4858,6 +4858,12 @@ export default function App() {
               defaultWorkspacePath={taskCreateIntent.defaultWorkspacePath}
               currentSessionId={taskCreateIntent.currentSessionId ?? null}
               initialMode={taskCreateIntent.initialMode}
+              prefillName={taskCreateIntent.prefillName}
+              prefillTaskMd={taskCreateIntent.prefillTaskMd}
+              initialExecutionMode={taskCreateIntent.initialExecutionMode}
+              initialIntervalMinutes={taskCreateIntent.initialIntervalMinutes}
+              initialCronExpression={taskCreateIntent.initialCronExpression}
+              initialCronTimezone={taskCreateIntent.initialCronTimezone}
               onClose={() => setTaskCreateIntent(null)}
               onDiscuss={handleCreateDialogDiscussion}
               onDispatched={(created) => {
@@ -4866,6 +4872,10 @@ export default function App() {
                   origin: taskCreateIntent.source,
                   has_workspace: !!created.workspacePath,
                 });
+                if (taskCreateIntent.learningDailyPush) {
+                  try { localStorage.setItem('myagents.learning.dailyTaskId.v1', created.id); } catch { /* The scheduled task remains durable in TaskStore. */ }
+                  window.dispatchEvent(new CustomEvent(CUSTOM_EVENTS.LEARNING_DAILY_TASK_CREATED));
+                }
                 setTaskCreateIntent(null);
               }}
             />

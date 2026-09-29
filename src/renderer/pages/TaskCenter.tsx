@@ -1,13 +1,13 @@
 // TaskCenter — single-instance tab combining Thought stream (left) and Task list (right).
 // PRD §5 / §6.
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BookOpen, Check, CircleCheck, MessageCircle, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { ThoughtPanel } from '@/components/task-center/ThoughtPanel';
 import { TaskListPanel } from '@/components/task-center/TaskListPanel';
 import RecordingSourceDialog from '@/components/task-center/RecordingSourceDialog';
-import { taskCenterAvailable } from '@/api/taskCenter';
+import { taskCenterAvailable, taskGet } from '@/api/taskCenter';
 import { speechModelPackStatus } from '@/api/recording';
 import { track } from '@/analytics';
 import { CUSTOM_EVENTS } from '@/../shared/constants';
@@ -85,7 +85,36 @@ export default function TaskCenter({
   });
   const [importingSources, setImportingSources] = useState(false);
   const [sourceImportError, setSourceImportError] = useState<string | null>(null);
+  const [dailyPushTaskId, setDailyPushTaskId] = useState(() => {
+    try { return localStorage.getItem('myagents.learning.dailyTaskId.v1') ?? ''; } catch { return ''; }
+  });
   const sourceFolderInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const handleCreated = () => {
+      try { setDailyPushTaskId(localStorage.getItem('myagents.learning.dailyTaskId.v1') ?? ''); } catch { /* The Task Center still owns the scheduled task. */ }
+    };
+    window.addEventListener(CUSTOM_EVENTS.LEARNING_DAILY_TASK_CREATED, handleCreated);
+    return () => window.removeEventListener(CUSTOM_EVENTS.LEARNING_DAILY_TASK_CREATED, handleCreated);
+  }, []);
+  useEffect(() => {
+    if (!dailyPushTaskId) return;
+    let cancelled = false;
+    void taskGet(dailyPushTaskId)
+      .then((task) => {
+        const activeStatuses = ['todo', 'running', 'verifying', 'blocked'];
+        if (cancelled || (task?.executionMode === 'recurring' && !task.deleted && activeStatuses.includes(task.status))) return;
+        try {
+          if (localStorage.getItem('myagents.learning.dailyTaskId.v1') === dailyPushTaskId) {
+            localStorage.removeItem('myagents.learning.dailyTaskId.v1');
+          }
+        } catch { /* Keep the current view usable when local storage is unavailable. */ }
+        setDailyPushTaskId((current) => current === dailyPushTaskId ? '' : current);
+      })
+      .catch((error) => {
+        console.warn('[TaskCenter] Failed to verify daily learning task:', error);
+      });
+    return () => { cancelled = true; };
+  }, [activePanel, dailyPushTaskId, isActive]);
   const lessons = useMemo(() => [...SAMPLE_LEARNING_CARDS, ...importedLessons], [importedLessons]);
   const completedCount = lessons.filter((lesson) => completedLessons.includes(lesson.id)).length;
 
@@ -134,6 +163,32 @@ export default function TaskCenter({
       detail: { content: prompt, learningMode: true, chatTitle },
     }));
   }, []);
+  const scheduleDailyLearning = useCallback(() => {
+    const sourceNotes = importedLessons.slice(0, 5).map((lesson) => (
+      `【${lesson.category}｜${lesson.title}】\n${lesson.body.slice(0, 1_200)}${lesson.sourceUrl ? `\n来源：${lesson.sourceUrl}` : ''}`
+    )).join('\n\n');
+    const prompt = [
+      '你是我的每日碎片学习教练。每天生成一张新的 3–5 分钟学习卡片，主题覆盖产品经理（用户心理、行为、商业分析）、英语六级、财商与税务；按星期轮换主题，周末用复习或综合练习。',
+      '卡片格式：主题与标题、一个讲清楚的知识点、一个贴近日常或工作的例子、一个今天能完成的小行动、一个等我回答的练习问题。总长控制在 350 个汉字内，英语练习可保留英文。',
+      '优先使用下面的个人资料并注明来源；资料不足时可讲稳定的通用知识，但不要编造来源、链接、法律税务结论或个性化投资建议。涉及可能变化的规定时，明确提醒核对官方来源。',
+      sourceNotes ? `个人资料快照（任务创建时导入，之后新增资料不会自动同步）：\n${sourceNotes}` : '目前没有导入个人资料；请基于可靠的通用知识生成内容，并明确不提供虚构引用。',
+      '这是一条重复运行任务。每次只推送一张卡片，不要输出执行报告或任务管理说明。',
+    ].join('\n\n');
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai';
+    window.dispatchEvent(new CustomEvent(CUSTOM_EVENTS.OPEN_TASK_CREATE, {
+      detail: {
+        initialMode: 'manual',
+        source: 'task-center',
+        defaultWorkspacePath: config.defaultWorkspacePath,
+        prefillName: '每日碎片学习',
+        prefillTaskMd: prompt,
+        initialExecutionMode: 'recurring',
+        initialCronExpression: '0 9 * * *',
+        initialCronTimezone: timezone,
+        learningDailyPush: true,
+      } satisfies TaskCreateRequest,
+    }));
+  }, [config.defaultWorkspacePath, importedLessons]);
   const [recordingSourceDialog, setRecordingSourceDialog] = useState<{
     initialSelection: RecordingSourceSelection;
     modelPackUsable?: boolean;
@@ -338,6 +393,15 @@ export default function TaskCenter({
                 <p className="text-xs text-[var(--ink-muted)]">{t('learning.sourceImportHint')}</p>
                 <button type="button" disabled={importingSources} onClick={() => sourceFolderInputRef.current?.click()} className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm text-[var(--ink)] hover:bg-[var(--hover-bg)] disabled:opacity-50">{importingSources ? t('learning.importing') : t('learning.importFolder')}</button>
                 <input ref={(element) => { sourceFolderInputRef.current = element; element?.setAttribute('webkitdirectory', ''); }} type="file" multiple accept=".md,text/markdown" className="hidden" onChange={(event) => { void importSources(event.currentTarget.files); event.currentTarget.value = ''; }} />
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-[var(--line-subtle)] pt-3">
+                {dailyPushTaskId ? <>
+                  <span className="rounded-md bg-[var(--success-bg)] px-2 py-1 text-sm text-[var(--on-success)]">{t('learning.dailyPushCreated')}</span>
+                  <button type="button" onClick={() => setActivePanel('tasks')} className="text-sm text-[var(--accent)] hover:underline">{t('learning.openTasks')}</button>
+                </> : <>
+                  <button type="button" onClick={scheduleDailyLearning} className="rounded-lg bg-[var(--accent)] px-3 py-2 text-sm font-medium text-[var(--on-accent)]">{t('learning.scheduleDaily')}</button>
+                  <span className="text-xs text-[var(--ink-muted)]">{t('learning.scheduleHint')}</span>
+                </>}
               </div>
               {sourceImportError && <p role="alert" className="mt-2 text-sm text-[var(--error)]">{sourceImportError}</p>}
             </section>

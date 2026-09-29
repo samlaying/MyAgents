@@ -912,6 +912,10 @@
     "importFolder": "Import a local folder",
     "sourceFrom": "Source: {{source}} · {{path}}",
     "openSource": "Open source",
+    "dailyPushCreated": "Daily delivery is set up",
+    "openTasks": "View or pause it in Tasks",
+    "scheduleDaily": "Set up daily delivery at 9:00",
+    "scheduleHint": "Daily delivery at 9:00 local time. MyAgents must be running.",
     "importErrors": {
       "too-many-files": "Import up to 40 Markdown files at a time",
       "total-size-limit": "The total Markdown import must be 2 MB or less",
