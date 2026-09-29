@@ -894,6 +894,21 @@
       "error": "Program error"
     }
   },
+  "learning": {
+    "tabsLabel": "Learning and tasks",
+    "tasksTab": "Tasks",
+    "learningTab": "Learn",
+    "dailyTagline": "Learn a little. Use it today.",
+    "dailyTitle": "Your daily learning",
+    "progress": "{{completed}} of {{total}} cards completed · Progress is saved locally",
+    "previewNotice": "Start with short cards. Your progress and feedback are saved locally.",
+    "tryNow": "Try it now",
+    "completed": "Completed",
+    "markComplete": "Mark complete",
+    "discuss": "Learn with AI",
+    "feedbackUseful": "This was helpful",
+    "feedbackSkip": "Not interested"
+  },
   "badges": {
     "category": {
       "loop": "Goal Mode",

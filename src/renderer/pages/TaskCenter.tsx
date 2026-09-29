@@ -298,9 +298,9 @@ export default function TaskCenter({
               "layout over rules" direction set in the review  */}
       <div className="flex shrink-0 items-center gap-5 px-5 pt-5 pb-3">
         <h1 className="text-xl font-semibold text-[var(--ink)]">{t('center.title')}</h1>
-        <div className="flex rounded-lg bg-[var(--paper-inset)] p-1" role="tablist" aria-label="学习与任务">
-          <button type="button" role="tab" aria-selected={activePanel === 'tasks'} onClick={() => setActivePanel('tasks')} className={`rounded-md px-3 py-1.5 text-sm ${activePanel === 'tasks' ? 'bg-[var(--paper)] text-[var(--ink)] shadow-sm' : 'text-[var(--ink-muted)]'}`}>任务</button>
-          <button type="button" role="tab" aria-selected={activePanel === 'learning'} onClick={() => setActivePanel('learning')} className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm ${activePanel === 'learning' ? 'bg-[var(--paper)] text-[var(--ink)] shadow-sm' : 'text-[var(--ink-muted)]'}`}><BookOpen className="h-3.5 w-3.5" />学习</button>
+        <div className="flex rounded-lg bg-[var(--paper-inset)] p-1" role="tablist" aria-label={t('learning.tabsLabel')}>
+          <button type="button" role="tab" aria-selected={activePanel === 'tasks'} onClick={() => setActivePanel('tasks')} className={`rounded-md px-3 py-1.5 text-sm ${activePanel === 'tasks' ? 'bg-[var(--paper)] text-[var(--ink)] shadow-sm' : 'text-[var(--ink-muted)]'}`}>{t('learning.tasksTab')}</button>
+          <button type="button" role="tab" aria-selected={activePanel === 'learning'} onClick={() => setActivePanel('learning')} className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm ${activePanel === 'learning' ? 'bg-[var(--paper)] text-[var(--ink)] shadow-sm' : 'text-[var(--ink-muted)]'}`}><BookOpen className="h-3.5 w-3.5" />{t('learning.learningTab')}</button>
         </div>
       </div>
 
@@ -311,11 +311,11 @@ export default function TaskCenter({
           <div className="mx-auto max-w-4xl">
             <section className="mb-5 rounded-2xl border border-[var(--line)] bg-[var(--paper-elevated)] p-5">
               <div className="flex items-start justify-between gap-4">
-                <div><p className="text-sm text-[var(--ink-muted)]">今天学一点，今天就用上</p><h2 className="mt-1 text-lg font-semibold text-[var(--ink)]">你的每日学习</h2><p className="mt-1 text-sm text-[var(--ink-muted)]">完成 {completedCount} / {lessons.length} 张卡片 · 进度保存在本机</p></div>
+                <div><p className="text-sm text-[var(--ink-muted)]">{t('learning.dailyTagline')}</p><h2 className="mt-1 text-lg font-semibold text-[var(--ink)]">{t('learning.dailyTitle')}</h2><p className="mt-1 text-sm text-[var(--ink-muted)]">{t('learning.progress', { completed: completedCount, total: lessons.length })}</p></div>
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]"><BookOpen className="h-5 w-5" /></div>
               </div>
               <div className="mt-4 h-2 overflow-hidden rounded-full bg-[var(--paper-inset)]"><div className="h-full rounded-full bg-[var(--accent)] transition-all" style={{ width: `${(completedCount / lessons.length) * 100}%` }} /></div>
-              <p className="mt-3 text-xs text-[var(--ink-muted)]">当前是体验卡片；定时推送和你的信息源还没有接入。</p>
+              <p className="mt-3 text-xs text-[var(--ink-muted)]">{t('learning.previewNotice')}</p>
             </section>
             <div className="grid gap-4 md:grid-cols-2">
               {lessons.map((lesson) => {
@@ -324,13 +324,13 @@ export default function TaskCenter({
                   <div className="flex items-center justify-between text-xs text-[var(--ink-muted)]"><span className="rounded-full bg-[var(--paper-inset)] px-2.5 py-1">{lesson.category}</span><span>{lesson.time}</span></div>
                   <h3 className="mt-4 text-base font-semibold leading-6 text-[var(--ink)]">{lesson.title}</h3>
                   <p className="mt-2 text-sm leading-6 text-[var(--ink-secondary)]">{lesson.body}</p>
-                  <div className="mt-4 rounded-xl bg-[var(--paper-inset)] p-3"><p className="text-xs font-medium text-[var(--ink-muted)]">现在试试</p><p className="mt-1 text-sm leading-5 text-[var(--ink)]">{lesson.action}</p></div>
+                  <div className="mt-4 rounded-xl bg-[var(--paper-inset)] p-3"><p className="text-xs font-medium text-[var(--ink-muted)]">{t('learning.tryNow')}</p><p className="mt-1 text-sm leading-5 text-[var(--ink)]">{lesson.action}</p></div>
                   <div className="mt-4 flex flex-wrap items-center gap-2">
-                    <button type="button" onClick={() => toggleLessonComplete(lesson.id)} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${done ? 'bg-emerald-500/10 text-emerald-700' : 'bg-[var(--accent)] text-[var(--on-accent)]'}`}>{done ? <CircleCheck className="h-4 w-4" /> : <Check className="h-4 w-4" />}{done ? '已学完' : '标记学完'}</button>
-                    <button type="button" onClick={() => discussLesson(lesson.prompt)} className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--line)] px-3 py-2 text-sm text-[var(--ink)] hover:bg-[var(--paper-hover)]"><MessageCircle className="h-4 w-4" />和 AI 多轮学</button>
+                    <button type="button" onClick={() => toggleLessonComplete(lesson.id)} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${done ? 'bg-[var(--success-bg)] text-[var(--on-success)]' : 'bg-[var(--accent)] text-[var(--on-accent)]'}`}>{done ? <CircleCheck className="h-4 w-4" /> : <Check className="h-4 w-4" />}{done ? t('learning.completed') : t('learning.markComplete')}</button>
+                    <button type="button" onClick={() => discussLesson(lesson.prompt)} className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--line)] px-3 py-2 text-sm text-[var(--ink)] hover:bg-[var(--hover-bg)]"><MessageCircle className="h-4 w-4" />{t('learning.discuss')}</button>
                     <span className="ml-auto flex gap-1">
-                      <button type="button" aria-label="这条有帮助" aria-pressed={lessonFeedback[lesson.id] === 'useful'} onClick={() => saveLessonFeedback(lesson.id, 'useful')} className={`rounded-md p-2 ${lessonFeedback[lesson.id] === 'useful' ? 'text-[var(--accent)]' : 'text-[var(--ink-muted)]'}`}><ThumbsUp className="h-4 w-4" /></button>
-                      <button type="button" aria-label="不感兴趣" aria-pressed={lessonFeedback[lesson.id] === 'skip'} onClick={() => saveLessonFeedback(lesson.id, 'skip')} className={`rounded-md p-2 ${lessonFeedback[lesson.id] === 'skip' ? 'text-[var(--accent)]' : 'text-[var(--ink-muted)]'}`}><ThumbsDown className="h-4 w-4" /></button>
+                      <button type="button" aria-label={t('learning.feedbackUseful')} aria-pressed={lessonFeedback[lesson.id] === 'useful'} onClick={() => saveLessonFeedback(lesson.id, 'useful')} className={`rounded-md p-2 ${lessonFeedback[lesson.id] === 'useful' ? 'text-[var(--accent)]' : 'text-[var(--ink-muted)]'}`}><ThumbsUp className="h-4 w-4" /></button>
+                      <button type="button" aria-label={t('learning.feedbackSkip')} aria-pressed={lessonFeedback[lesson.id] === 'skip'} onClick={() => saveLessonFeedback(lesson.id, 'skip')} className={`rounded-md p-2 ${lessonFeedback[lesson.id] === 'skip' ? 'text-[var(--accent)]' : 'text-[var(--ink-muted)]'}`}><ThumbsDown className="h-4 w-4" /></button>
                     </span>
                   </div>
                 </article>;
