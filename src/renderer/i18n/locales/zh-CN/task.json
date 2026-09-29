@@ -894,6 +894,21 @@
       "error": "程序错误"
     }
   },
+  "learning": {
+    "tabsLabel": "学习与任务",
+    "tasksTab": "任务",
+    "learningTab": "学习",
+    "dailyTagline": "今天学一点，今天就用上",
+    "dailyTitle": "你的每日学习",
+    "progress": "完成 {{completed}} / {{total}} 张卡片 · 进度保存在本机",
+    "previewNotice": "先从短卡片开始，完成进度和反馈会保存在本机。",
+    "tryNow": "现在试试",
+    "completed": "已学完",
+    "markComplete": "标记学完",
+    "discuss": "和 AI 多轮学",
+    "feedbackUseful": "这条有帮助",
+    "feedbackSkip": "不感兴趣"
+  },
   "badges": {
     "category": {
       "loop": "目标模式",

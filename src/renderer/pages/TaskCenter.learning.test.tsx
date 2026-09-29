@@ -1,0 +1,66 @@
+import { fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { i18n } from '@/i18n';
+import TaskCenter from './TaskCenter';
+
+vi.mock('@/components/task-center/ThoughtPanel', () => ({ ThoughtPanel: () => null }));
+vi.mock('@/components/task-center/TaskListPanel', () => ({ TaskListPanel: () => null }));
+vi.mock('@/components/task-center/RecordingSourceDialog', () => ({ default: () => null }));
+vi.mock('@/api/taskCenter', () => ({ taskCenterAvailable: () => true }));
+vi.mock('@/hooks/useConfig', () => ({
+  useConfig: () => ({ config: {}, updateConfig: vi.fn() }),
+}));
+vi.mock('@/analytics', () => ({ track: vi.fn() }));
+
+beforeEach(() => localStorage.clear());
+afterEach(() => {
+  localStorage.clear();
+  vi.restoreAllMocks();
+});
+
+function openLearning() {
+  const view = render(<TaskCenter />);
+  fireEvent.click(screen.getByRole('tab', { name: '学习' }));
+  return view;
+}
+
+describe('personal learning cards', () => {
+  it('restores completed cards and feedback after reopening and allows undo', () => {
+    const first = openLearning();
+    fireEvent.click(screen.getAllByRole('button', { name: '标记学完' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: '这条有帮助' })[0]);
+    expect(JSON.parse(localStorage.getItem('myagents.learning.completed.v1')!)).toEqual(['pm-friction']);
+    expect(JSON.parse(localStorage.getItem('myagents.learning.feedback.v1')!)).toEqual({ 'pm-friction': 'useful' });
+    first.unmount();
+
+    openLearning();
+    expect(screen.getByText('完成 1 / 3 张卡片 · 进度保存在本机')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: '这条有帮助' })[0]).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: '已学完' }));
+    expect(JSON.parse(localStorage.getItem('myagents.learning.completed.v1')!)).toEqual([]);
+  });
+
+  it('falls back from malformed storage and keeps interactions usable when writes fail', () => {
+    localStorage.setItem('myagents.learning.completed.v1', '{broken');
+    localStorage.setItem('myagents.learning.feedback.v1', '[]');
+    openLearning();
+    expect(screen.getByText('完成 0 / 3 张卡片 · 进度保存在本机')).toBeInTheDocument();
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('Quota exceeded', 'QuotaExceededError');
+    });
+    fireEvent.click(screen.getAllByRole('button', { name: '标记学完' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: '不感兴趣' })[0]);
+    expect(screen.getByRole('button', { name: '已学完' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: '不感兴趣' })[0]).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('renders the learning panel chrome in English', async () => {
+    await i18n.changeLanguage('en-US');
+    render(<TaskCenter />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Learn' }));
+    expect(screen.getByRole('tablist', { name: 'Learning and tasks' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Your daily learning' })).toBeInTheDocument();
+    expect(screen.getByText('0 of 3 cards completed · Progress is saved locally')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Mark complete' })).toHaveLength(3);
+  });
+});
