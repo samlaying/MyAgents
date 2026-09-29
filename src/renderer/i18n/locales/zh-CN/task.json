@@ -901,13 +901,25 @@
     "dailyTagline": "今天学一点，今天就用上",
     "dailyTitle": "你的每日学习",
     "progress": "完成 {{completed}} / {{total}} 张卡片 · 进度保存在本机",
-    "previewNotice": "先从短卡片开始，完成进度和反馈会保存在本机。",
     "tryNow": "现在试试",
     "completed": "已学完",
     "markComplete": "标记学完",
     "discuss": "和 AI 多轮学",
     "feedbackUseful": "这条有帮助",
-    "feedbackSkip": "不感兴趣"
+    "feedbackSkip": "不感兴趣",
+    "sourceImportHint": "卡片和进度仅保存在本机。选择 X、小红书或 B 站的 Markdown 内容目录来导入。",
+    "importing": "正在导入…",
+    "importFolder": "导入本地资料目录",
+    "sourceFrom": "来源：{{source}} · {{path}}",
+    "openSource": "打开原始内容",
+    "importErrors": {
+      "too-many-files": "一次最多导入 40 个 Markdown 文件",
+      "total-size-limit": "一次导入的 Markdown 总大小不能超过 2 MB",
+      "file-size-limit": "单个 Markdown 文件不能超过 100 KB",
+      "no-markdown": "所选目录里没有 Markdown 文件",
+      "storage-full": "本机空间不足，无法保存这些资料",
+      "unknown": "导入失败，请检查 Markdown 文件后重试"
+    }
   },
   "badges": {
     "category": {

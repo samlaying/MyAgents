@@ -901,13 +901,25 @@
     "dailyTagline": "Learn a little. Use it today.",
     "dailyTitle": "Your daily learning",
     "progress": "{{completed}} of {{total}} cards completed · Progress is saved locally",
-    "previewNotice": "Start with short cards. Your progress and feedback are saved locally.",
     "tryNow": "Try it now",
     "completed": "Completed",
     "markComplete": "Mark complete",
     "discuss": "Learn with AI",
     "feedbackUseful": "This was helpful",
-    "feedbackSkip": "Not interested"
+    "feedbackSkip": "Not interested",
+    "sourceImportHint": "Cards and progress stay on this device. Import Markdown folders from X, Xiaohongshu, or Bilibili.",
+    "importing": "Importing...",
+    "importFolder": "Import a local folder",
+    "sourceFrom": "Source: {{source}} · {{path}}",
+    "openSource": "Open source",
+    "importErrors": {
+      "too-many-files": "Import up to 40 Markdown files at a time",
+      "total-size-limit": "The total Markdown import must be 2 MB or less",
+      "file-size-limit": "Each Markdown file must be 100 KB or less",
+      "no-markdown": "No Markdown files were found in that folder",
+      "storage-full": "There is not enough local storage to save these files",
+      "unknown": "Import failed. Check the Markdown files and try again."
+    }
   },
   "badges": {
     "category": {
