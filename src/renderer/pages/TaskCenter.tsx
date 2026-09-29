@@ -112,8 +112,10 @@ export default function TaskCenter({
     });
   }, []);
 
-  const discussLesson = useCallback((prompt: string) => {
-    window.dispatchEvent(new CustomEvent(CUSTOM_EVENTS.OPEN_AI_DISCUSSION, { detail: { content: prompt } }));
+  const discussLesson = useCallback((prompt: string, chatTitle: string) => {
+    window.dispatchEvent(new CustomEvent(CUSTOM_EVENTS.OPEN_AI_DISCUSSION, {
+      detail: { content: prompt, learningMode: true, chatTitle },
+    }));
   }, []);
   const [recordingSourceDialog, setRecordingSourceDialog] = useState<{
     initialSelection: RecordingSourceSelection;
@@ -327,7 +329,7 @@ export default function TaskCenter({
                   <div className="mt-4 rounded-xl bg-[var(--paper-inset)] p-3"><p className="text-xs font-medium text-[var(--ink-muted)]">{t('learning.tryNow')}</p><p className="mt-1 text-sm leading-5 text-[var(--ink)]">{lesson.action}</p></div>
                   <div className="mt-4 flex flex-wrap items-center gap-2">
                     <button type="button" onClick={() => toggleLessonComplete(lesson.id)} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${done ? 'bg-[var(--success-bg)] text-[var(--on-success)]' : 'bg-[var(--accent)] text-[var(--on-accent)]'}`}>{done ? <CircleCheck className="h-4 w-4" /> : <Check className="h-4 w-4" />}{done ? t('learning.completed') : t('learning.markComplete')}</button>
-                    <button type="button" onClick={() => discussLesson(lesson.prompt)} className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--line)] px-3 py-2 text-sm text-[var(--ink)] hover:bg-[var(--hover-bg)]"><MessageCircle className="h-4 w-4" />{t('learning.discuss')}</button>
+                    <button type="button" onClick={() => discussLesson(lesson.prompt, lesson.title)} className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--line)] px-3 py-2 text-sm text-[var(--ink)] hover:bg-[var(--hover-bg)]"><MessageCircle className="h-4 w-4" />{t('learning.discuss')}</button>
                     <span className="ml-auto flex gap-1">
                       <button type="button" aria-label={t('learning.feedbackUseful')} aria-pressed={lessonFeedback[lesson.id] === 'useful'} onClick={() => saveLessonFeedback(lesson.id, 'useful')} className={`rounded-md p-2 ${lessonFeedback[lesson.id] === 'useful' ? 'text-[var(--accent)]' : 'text-[var(--ink-muted)]'}`}><ThumbsUp className="h-4 w-4" /></button>
                       <button type="button" aria-label={t('learning.feedbackSkip')} aria-pressed={lessonFeedback[lesson.id] === 'skip'} onClick={() => saveLessonFeedback(lesson.id, 'skip')} className={`rounded-md p-2 ${lessonFeedback[lesson.id] === 'skip' ? 'text-[var(--accent)]' : 'text-[var(--ink-muted)]'}`}><ThumbsDown className="h-4 w-4" /></button>
