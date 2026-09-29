@@ -2325,6 +2325,36 @@ describe('App helper launch', () => {
     );
   });
 
+  it.each([false, true])('starts a focused learning chat without desktop Task context (managed provider: %s)', async (managed) => {
+    mocks.tauriEnvironment = false;
+    mocks.multiAgentRuntime = true;
+    mocks.agent.runtime = managed ? 'builtin' : 'codex';
+    mocks.resolveBuiltinSelection.mockReturnValue(managed
+      ? { provider: managedCodexProvider(), model: 'gpt-5.5' }
+      : undefined);
+    const title = 'A long learning card title that should fit in a tab';
+    const prompt = 'Ask me one question at a time about user friction.';
+
+    render(<App />);
+    act(() => {
+      window.dispatchEvent(new CustomEvent(CUSTOM_EVENTS.OPEN_AI_DISCUSSION, {
+        detail: { content: prompt, learningMode: true, chatTitle: title },
+      }));
+    });
+
+    await waitFor(() => expect(latestTabbarProps().tabs).toEqual(expect.arrayContaining([
+      expect.objectContaining({ view: 'chat', title: `${title.slice(0, 20)}...` }),
+    ])));
+    expect(tauriCoreMocks.invoke).not.toHaveBeenCalledWith('cmd_task_prepare_discussion', expect.anything());
+    expect(mocks.chatProps).toEqual(expect.arrayContaining([
+      expect.objectContaining({ initialMessage: expect.objectContaining({ text: prompt }) }),
+    ]));
+    const learningChat = [...mocks.chatProps].reverse().find(props => Boolean(props.initialMessage)) as
+      | { initialMessage?: { requiredSystemSkill?: unknown } }
+      | undefined;
+    expect(learningChat?.initialMessage?.requiredSystemSkill).toBeUndefined();
+  });
+
   it('starts Task discussion with the workspace external Runtime without requiring a builtin provider', async () => {
     mocks.tauriEnvironment = true;
     mocks.multiAgentRuntime = true;

@@ -77,6 +77,7 @@ import {
   createNewTab,
   getFolderName,
   buildChatFlipPatch,
+  generateSessionTitle,
   generateTabId,
   MAX_TABS,
 } from '@/types/tab';
@@ -3999,6 +4000,9 @@ export default function App() {
         // resolves to the same id and its later controller update is a no-op for
         // view/agentDir/sessionId.
         const newTab = createNewTab();
+        const discussionTitle = chatTitle
+          ? generateSessionTitle(chatTitle)
+          : t('appChrome.discussionTabTitle');
         if (initialMessage.providerExecutionIdentity) {
           if (!openLaunchTabNow(newTab)) return false;
         } else {
@@ -4007,7 +4011,7 @@ export default function App() {
             view: 'chat' as const,
             agentDir: workspace.path,
             sessionId: createPendingSessionId(newTab.id),
-            title: chatTitle ?? t('appChrome.discussionTabTitle'),
+            title: discussionTitle,
             initialMessage,
             sidecarConfigDisposition: 'pending',
           };
@@ -4025,7 +4029,7 @@ export default function App() {
         // workspace display name. Restore the originating discussion or lesson title.
         tabWorkspaceController.update(newTab.id, 'chat', (tab) => ({
           ...tab,
-          title: chatTitle ?? t('appChrome.discussionTabTitle'),
+          title: discussionTitle,
         }));
         return true;
       } catch (err) {
