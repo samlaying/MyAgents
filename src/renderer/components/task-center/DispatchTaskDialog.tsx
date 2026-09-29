@@ -83,6 +83,12 @@ interface Props {
   onDispatched: (task: Task) => void;
   /** Resolves true only after the discussion tab has actually opened. */
   onDiscuss: (request: TaskDiscussionRequest) => Promise<boolean>;
+  prefillName?: string;
+  prefillTaskMd?: string;
+  initialExecutionMode?: TaskExecutionMode;
+  initialIntervalMinutes?: number;
+  initialCronExpression?: string;
+  initialCronTimezone?: string;
 }
 
 export function DispatchTaskDialog({
@@ -93,6 +99,12 @@ export function DispatchTaskDialog({
   onClose,
   onDispatched,
   onDiscuss,
+  prefillName,
+  prefillTaskMd,
+  initialExecutionMode = 'once',
+  initialIntervalMinutes = 30,
+  initialCronExpression = '',
+  initialCronTimezone = '',
 }: Props) {
   const isFromThought = !!thought;
   const { t } = useTranslation('task');
@@ -128,8 +140,8 @@ export function DispatchTaskDialog({
   }, [thought, visibleProjects, defaultWorkspacePath]);
 
   const defaultName = useMemo(
-    () => (thought ? deriveTaskName(thought.content) : ''),
-    [thought],
+    () => (thought ? deriveTaskName(thought.content) : prefillName ?? ''),
+    [prefillName, thought],
   );
 
   // Form state. v0.1.69 scope is AI execution only — `executor` is pinned to
@@ -140,7 +152,7 @@ export function DispatchTaskDialog({
   const [workspacePath, setWorkspacePath] = useState<string>(
     defaultProject?.path ?? '',
   );
-  const [executionMode, setExecutionMode] = useState<TaskExecutionMode>('once');
+  const [executionMode, setExecutionMode] = useState<TaskExecutionMode>(initialExecutionMode);
   const [runMode, setRunMode] = useState<TaskRunMode>('new-session');
   const [preselectedSessionId, setPreselectedSessionId] = useState('');
   const [trigger, setTrigger] = useState<TaskTrigger>({
@@ -148,15 +160,15 @@ export function DispatchTaskDialog({
     detector: { type: 'always' },
   });
   const [triggerValid, setTriggerValid] = useState(true);
-  const [taskMd, setTaskMd] = useState(thought?.content ?? '');
+  const [taskMd, setTaskMd] = useState(thought?.content ?? prefillTaskMd ?? '');
 
   // Schedule-specific state (mirrors cron TaskCreateModal fields)
   const [atDateTime, setAtDateTime] = useState(() =>
     toLocalDateTimeString(new Date(Date.now() + 3600_000)),
   );
-  const [intervalMinutes, setIntervalMinutes] = useState(30);
-  const [cronExpression, setCronExpression] = useState('');
-  const [cronTimezone, setCronTimezone] = useState('');
+  const [intervalMinutes, setIntervalMinutes] = useState(initialIntervalMinutes);
+  const [cronExpression, setCronExpression] = useState(initialCronExpression);
+  const [cronTimezone, setCronTimezone] = useState(initialCronTimezone);
 
   // End conditions
   const [endConditionMode, setEndConditionMode] = useState<EndConditionMode>('forever');

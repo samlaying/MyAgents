@@ -912,6 +912,10 @@
     "importFolder": "导入本地资料目录",
     "sourceFrom": "来源：{{source}} · {{path}}",
     "openSource": "打开原始内容",
+    "dailyPushCreated": "每日推送任务已创建",
+    "openTasks": "到任务列表查看或暂停",
+    "scheduleDaily": "设置每日 9:00 推送",
+    "scheduleHint": "默认每天本地时间 9:00 推送，需保持 MyAgents 运行。",
     "importErrors": {
       "too-many-files": "一次最多导入 40 个 Markdown 文件",
       "total-size-limit": "一次导入的 Markdown 总大小不能超过 2 MB",
