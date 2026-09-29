@@ -25,6 +25,11 @@ function openLearning() {
 }
 
 describe('personal learning cards', () => {
+  it('enables directory selection when the learning tab mounts the file input', () => {
+    const view = openLearning();
+    expect(view.container.querySelector('input[type="file"]')).toHaveAttribute('webkitdirectory', '');
+  });
+
   it('restores completed cards and feedback after reopening and allows undo', () => {
     const first = openLearning();
     fireEvent.click(screen.getAllByRole('button', { name: '标记学完' })[0]);
