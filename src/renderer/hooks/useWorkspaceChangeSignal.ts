@@ -15,11 +15,15 @@ export function useWorkspaceChangeSignal(
   workspacePath: string | null,
   enabled = true,
   onPathsMoved?: (moves: WorkspacePathMove[]) => void,
+  onPathsChanged?: (paths: string[]) => void,
 ): number {
   const fileService = useWorkspaceFileService(workspacePath);
   const [signal, setSignal] = useState(0);
   const deliverMoves = useEffectEvent((moves: WorkspacePathMove[]) => {
     onPathsMoved?.(moves);
+  });
+  const deliverPaths = useEffectEvent((paths: string[]) => {
+    onPathsChanged?.(paths);
   });
 
   useEffect(() => {
@@ -37,10 +41,14 @@ export function useWorkspaceChangeSignal(
           return;
         }
         token = handle.token;
-        await listenWithCleanup<string | { moves: WorkspacePathMove[] }>(`workspace:files-changed:${handle.eventKey}`, (event) => {
+        await listenWithCleanup<string | { moves: WorkspacePathMove[] } | { paths: string[] }>(`workspace:files-changed:${handle.eventKey}`, (event) => {
           if (!mounted) return;
-          if (typeof event.payload === 'object' && event.payload !== null && Array.isArray(event.payload.moves)) {
-            deliverMoves(event.payload.moves);
+          if (typeof event.payload === 'object' && event.payload !== null) {
+            if ('moves' in event.payload && Array.isArray(event.payload.moves)) {
+              deliverMoves(event.payload.moves);
+            } else if ('paths' in event.payload && Array.isArray(event.payload.paths)) {
+              deliverPaths(event.payload.paths);
+            }
           }
           setSignal((prev) => prev + 1);
         }, ac.signal);

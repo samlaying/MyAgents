@@ -398,6 +398,85 @@ pub struct InitBundledWorkspaceResult {
 
 const BUNDLED_WORKSPACE_TEMPLATES_DIR: &str = "bundled-workspaces";
 const DEFAULT_BUNDLED_WORKSPACE_TEMPLATE_ID: &str = "mino";
+const LEARNING_BUNDLED_WORKSPACE_TEMPLATE_ID: &str = "learning";
+
+/// Contract layer seeded into an adopted local folder so it becomes a full
+/// learning workspace WITHOUT touching the user's own files: files are only
+/// copied when absent, directories only created when missing. Seed cards and
+/// the template .gitignore are deliberately excluded — adopted folders hold
+/// the user's own material; sample content belongs to template-created
+/// workspaces only.
+const LEARNING_SEED_FILES: [&str; 5] = [
+    "CLAUDE.md",
+    ".claude/rules/01-IDENTITY.md",
+    ".claude/rules/02-SOUL.md",
+    ".claude/rules/03-USER.md",
+    ".claude/rules/04-LEARNING-STATE.md",
+];
+const LEARNING_SEED_DIRS: [&str; 9] = [
+    "inbox",
+    "sources",
+    "cards",
+    "topics",
+    "assessments",
+    "mistakes",
+    "reviews/weekly",
+    "reviews/monthly",
+    "archive",
+];
+
+fn seed_learning_workspace_at(template: &Path, target: &Path) -> Result<(), String> {
+    if !template.is_dir() {
+        return Err(format!("Learning template not found: {:?}", template));
+    }
+    if !target.is_dir() {
+        return Err(format!("Seed target is not a directory: {:?}", target));
+    }
+    for rel in LEARNING_SEED_DIRS {
+        let dir = target.join(rel);
+        if !dir.is_dir() {
+            fs::create_dir_all(&dir).map_err(|e| format!("Failed to create {}: {}", rel, e))?;
+        }
+    }
+    for rel in LEARNING_SEED_FILES {
+        let dest = target.join(rel);
+        if dest.exists() {
+            continue; // never overwrite the user's own files
+        }
+        let src = template.join(rel);
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create parent of {}: {}", rel, e))?;
+        }
+        fs::copy(&src, &dest).map_err(|e| format!("Failed to seed {}: {}", rel, e))?;
+    }
+    Ok(())
+}
+
+/// Command: Upgrade an adopted local folder into a full learning workspace.
+/// Engineering-owned structure (see the learning workspace contract) — the
+/// agent never creates directories; this is the adoption-time equivalent of
+/// the template copy. Merge semantics: missing files/dirs are added, existing
+/// user content is never touched.
+#[tauri::command]
+pub fn cmd_seed_learning_workspace<R: Runtime>(
+    app_handle: AppHandle<R>,
+    target: String,
+) -> Result<(), String> {
+    let target_dir = target.trim();
+    if target_dir.is_empty() {
+        return Err("Seed target path is empty".to_string());
+    }
+    let target_path = std::path::PathBuf::from(target_dir);
+    // Refuse to seed into the immutable template source itself.
+    let template = resolve_bundled_workspace_template(&app_handle, LEARNING_BUNDLED_WORKSPACE_TEMPLATE_ID)?;
+    if let Ok(canonical_target) = target_path.canonicalize() {
+        if canonical_target == template || canonical_target.starts_with(&template) {
+            return Err("Refusing to seed into the bundled template source".to_string());
+        }
+    }
+    seed_learning_workspace_at(&template, &target_path)
+}
 
 /// Resolve one immutable workspace template shipped with the current app.
 ///
@@ -435,18 +514,26 @@ fn resolve_bundled_workspace_template<R: Runtime>(
     resolve_bundled_workspace_template_at(&resource_dir, template_id)
 }
 
-/// Command: Initialize bundled workspace (mino) on first launch
-/// Copies from the immutable app template to ~/.myagents/projects/mino/.
-/// An existing user-owned workspace is never overwritten.
+/// Command: Initialize a bundled system-preset workspace on first launch.
+/// Copies from the immutable app template to `~/.myagents/projects/<template_id>/`
+/// (default "mino"). An existing user-owned workspace is never overwritten.
 #[tauri::command]
 pub fn cmd_initialize_bundled_workspace<R: Runtime>(
     app_handle: AppHandle<R>,
+    template_id: Option<String>,
 ) -> Result<InitBundledWorkspaceResult, String> {
-    let home_dir = dirs::home_dir().ok_or("Failed to get home dir")?;
-    let mino_dest = home_dir.join(".myagents").join("projects").join("mino");
+    let template_id = template_id.unwrap_or_else(|| DEFAULT_BUNDLED_WORKSPACE_TEMPLATE_ID.to_string());
+    validate_template_id(&template_id)?;
+    // Honor the app-level data dir authority (incl. MYAGENTS_DATA_DIR for
+    // isolated dev instances) instead of hardcoding ~/.myagents — otherwise
+    // a second dev instance copies workspace templates into the REAL data
+    // dir and registers them in the real projects.json.
+    let data_dir = crate::app_dirs::myagents_data_dir()
+        .ok_or("Failed to resolve MyAgents data dir")?;
+    let dest = data_dir.join("projects").join(&template_id);
 
     // NOTE: Path::exists() follows symlinks, so a dangling
-    // ~/.myagents/projects/mino link returns false here and we'd fall
+    // ~/.myagents/projects/<template> link returns false here and we'd fall
     // through to copy_dir_recursive — which fails on EEXIST and surfaces
     // a workspace-init error to the user every launch until they clear
     // the link by hand. Same family as the cpSync crash fixed in
@@ -454,31 +541,34 @@ pub fn cmd_initialize_bundled_workspace<R: Runtime>(
     // "用 existsSync / Path::exists() 当存在性探针"). Single fixed path
     // and graceful error → not crashing in production, so left as TODO
     // to avoid scope creep on the v0.2.6 hotfix.
-    if mino_dest.exists() {
+    if dest.exists() {
         return Ok(InitBundledWorkspaceResult {
-            path: mino_dest.to_string_lossy().to_string(),
+            path: dest.to_string_lossy().to_string(),
             is_new: false,
         });
     }
 
-    let mino_src =
-        resolve_bundled_workspace_template(&app_handle, DEFAULT_BUNDLED_WORKSPACE_TEMPLATE_ID)?;
+    let src = resolve_bundled_workspace_template(&app_handle, &template_id)?;
 
     ulog_info!(
-        "[workspace] Initializing bundled workspace from {:?}",
-        mino_src
+        "[workspace] Initializing bundled workspace '{}' from {:?}",
+        template_id,
+        src
     );
-    copy_dir_recursive(&mino_src, &mino_dest)
-        .map_err(|e| format!("Failed to copy mino workspace: {}", e))?;
+    copy_dir_recursive(&src, &dest)
+        .map_err(|e| format!("Failed to copy '{}' workspace: {}", template_id, e))?;
 
     // Validate the copy produced a valid workspace
-    if !mino_dest.join("CLAUDE.md").exists() {
-        let _ = fs::remove_dir_all(&mino_dest);
-        return Err("Bundled mino copy produced incomplete workspace".to_string());
+    if !dest.join("CLAUDE.md").exists() {
+        let _ = fs::remove_dir_all(&dest);
+        return Err(format!(
+            "Bundled '{}' copy produced incomplete workspace",
+            template_id
+        ));
     }
 
     Ok(InitBundledWorkspaceResult {
-        path: mino_dest.to_string_lossy().to_string(),
+        path: dest.to_string_lossy().to_string(),
         is_new: true,
     })
 }
@@ -1534,8 +1624,9 @@ fn merge_dir_recursive_validated_with_home(
 #[cfg(test)]
 mod bundled_workspace_template_tests {
     use super::{
-        resolve_bundled_workspace_template_at, BUNDLED_WORKSPACE_TEMPLATES_DIR,
-        DEFAULT_BUNDLED_WORKSPACE_TEMPLATE_ID,
+        resolve_bundled_workspace_template_at, seed_learning_workspace_at,
+        BUNDLED_WORKSPACE_TEMPLATES_DIR, DEFAULT_BUNDLED_WORKSPACE_TEMPLATE_ID,
+        LEARNING_BUNDLED_WORKSPACE_TEMPLATE_ID,
     };
     use std::path::Path;
 
@@ -1553,6 +1644,111 @@ mod bundled_workspace_template_tests {
         assert!(resolved.ends_with(
             Path::new(BUNDLED_WORKSPACE_TEMPLATES_DIR).join(DEFAULT_BUNDLED_WORKSPACE_TEMPLATE_ID)
         ));
+    }
+
+    #[test]
+    fn seeding_an_adopted_folder_merges_without_touching_user_files() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("src-tauri must live under the repository root");
+        let template =
+            resolve_bundled_workspace_template_at(repo_root, LEARNING_BUNDLED_WORKSPACE_TEMPLATE_ID)
+                .expect("learning template must resolve");
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let target = tmp.path();
+
+        // User's own files that must survive untouched.
+        std::fs::write(target.join("CLAUDE.md"), "user's own contract").unwrap();
+        std::fs::create_dir_all(target.join(".claude").join("rules")).unwrap();
+        std::fs::write(
+            target.join(".claude").join("rules").join("03-USER.md"),
+            "user's own profile",
+        )
+        .unwrap();
+
+        seed_learning_workspace_at(&template, target).expect("seed must succeed");
+
+        // Existing user files keep their content.
+        assert_eq!(
+            std::fs::read_to_string(target.join("CLAUDE.md")).unwrap(),
+            "user's own contract"
+        );
+        assert_eq!(
+            std::fs::read_to_string(target.join(".claude").join("rules").join("03-USER.md"))
+                .unwrap(),
+            "user's own profile"
+        );
+        // Missing contract files are filled in.
+        assert!(target.join(".claude").join("rules").join("04-LEARNING-STATE.md").is_file());
+        // Directory skeleton is created.
+        for dir in ["inbox", "sources", "cards", "topics", "archive"] {
+            assert!(target.join(dir).is_dir(), "seed must create {}/", dir);
+        }
+        // Seed cards are NOT dropped into an adopted folder.
+        assert!(std::fs::read_dir(target.join("cards")).unwrap().next().is_none());
+        // Re-seeding is idempotent and still leaves user files alone.
+        seed_learning_workspace_at(&template, target).expect("re-seed must succeed");
+        assert_eq!(
+            std::fs::read_to_string(target.join("CLAUDE.md")).unwrap(),
+            "user's own contract"
+        );
+    }
+
+    #[test]
+    fn committed_learning_template_is_complete_for_first_launch_copy() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("src-tauri must live under the repository root");
+
+        let resolved = resolve_bundled_workspace_template_at(
+            repo_root,
+            LEARNING_BUNDLED_WORKSPACE_TEMPLATE_ID,
+        )
+        .expect("committed learning template must resolve");
+
+        // The coach contract and its auto-loaded rules are the product surface
+        // the daily push depends on; cards/ must ship seeds so the panel has
+        // content before the first scheduled generation. The full directory
+        // skeleton is engineered here — the agent only writes files into it.
+        assert!(resolved.join("CLAUDE.md").is_file());
+        assert!(resolved
+            .join(".claude")
+            .join("rules")
+            .join("04-LEARNING-STATE.md")
+            .is_file());
+        for dir in [
+            "inbox",
+            "sources",
+            "cards",
+            "topics",
+            "assessments",
+            "mistakes",
+            "reviews/weekly",
+            "reviews/monthly",
+            "archive",
+        ] {
+            assert!(
+                resolved.join(dir).is_dir(),
+                "learning template must ship the {}/ directory",
+                dir
+            );
+        }
+        let seed_cards = std::fs::read_dir(resolved.join("cards"))
+            .expect("learning template cards/ must be readable")
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| {
+                entry
+                    .path()
+                    .extension()
+                    .is_some_and(|ext| ext == "md")
+            })
+            .count();
+        assert!(
+            seed_cards >= 3,
+            "learning template must ship at least 3 seed cards, found {}",
+            seed_cards
+        );
     }
 
     #[test]

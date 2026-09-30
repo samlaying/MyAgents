@@ -178,6 +178,26 @@ cd MyAgents
 
 setup 脚本会先按当前 target 和已验证缓存检查原生推理构建工具，再开始下载 Node runtime、安装项目依赖或拉取 Rust crates；缺失的原生构建工具会得到安装与验证提示，不会被脚本自动安装。随后它会缓存离线文档与语音推理资源；重复运行会复用已验证的资源缓存。默认 Mino 工作区模板已经提交在 `bundled-workspaces/mino/`，构建和初始化不需要额外的 GitHub SSH 或模板下载。
 
+#### macOS 学习版客户端
+
+需要在 macOS 上单独编译并打开包含「学习」模块的桌面客户端时，使用独立的 bundle 标识和应用名称，避免和普通版混淆。以下命令会从当前检出的代码构建资源，并把 Rust 桌面层与 Node Sidecar 的会话数据统一放在 `~/.myagents-learning-dev/`：
+
+```bash
+# 先构建前端、Sidecar、Bridge 和 CLI；Tauri 命令会关闭默认构建钩子，避免重复构建
+VITE_DEBUG_MODE=true npm run build:assets
+
+# Apple Silicon 调试版。Swift 兼容库参数用于当前 macOS Command Line Tools 链接环境
+RUSTFLAGS='-Clink-arg=-Wl,-force_load,/Library/Developer/CommandLineTools/usr/lib/swift/macosx/libswiftCompatibility56.a -Clink-arg=-Wl,-force_load,/Library/Developer/CommandLineTools/usr/lib/swift/macosx/libswiftCompatibilityConcurrency.a -Clink-arg=-Wl,-rpath,/usr/lib/swift' \
+  ./node_modules/.bin/tauri build --debug --bundles app --target aarch64-apple-darwin \
+  --config '{"identifier":"com.myagents.app.learning-dev","productName":"MyAgents Learning Dev","build":{"beforeBuildCommand":null},"bundle":{"createUpdaterArtifacts":false}}'
+
+# 以独立数据目录启动原生 macOS 客户端
+open -n --env MYAGENTS_DATA_DIR="$HOME/.myagents-learning-dev" \
+  "$PWD/src-tauri/target/aarch64-apple-darwin/debug/bundle/macos/MyAgents Learning Dev.app"
+```
+
+Intel Mac 将 `--target aarch64-apple-darwin` 和目标产物路径中的 `aarch64-apple-darwin` 改为 `x86_64-apple-darwin`。重建前应从当前项目根目录执行命令；不要用 `./build_dev.sh` 代替，它生成的是普通名称/标识的调试客户端。首次启动会在独立数据目录初始化配置；若需要复用普通版的模型配置，可先按需复制 `~/.myagents/config.json`、`providers/` 和 `credentials/`，不要把整个普通版数据目录直接设为学习版目录。
+
 ### 常用命令
 
 ```bash

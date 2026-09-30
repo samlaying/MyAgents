@@ -110,6 +110,9 @@ impl LockAcquireResult {
 /// dev/prod operation with fully isolated state (config, bots, sidecars, ports).
 /// For now, both profiles share the same directory.
 pub fn myagents_data_dir() -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os("MYAGENTS_DATA_DIR") {
+        return Some(PathBuf::from(path));
+    }
     dirs::home_dir().map(|h| h.join(".myagents"))
 }
 

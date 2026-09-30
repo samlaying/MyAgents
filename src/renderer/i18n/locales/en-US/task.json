@@ -320,7 +320,8 @@
       "dispatched": "Task \"{{name}}\" was dispatched. AI is running it.",
       "startFailed": "Task was created, but starting execution failed: {{message}}",
       "created": "Task \"{{name}}\" was created"
-    }
+    },
+    "workspaceLockedHint": "This task is pinned to the selected workspace and cannot be changed."
   },
   "execution": {
     "modes": {
@@ -646,7 +647,15 @@
       "weekly": "Weekly",
       "monthly": "Monthly"
     },
-    "weekdays": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+    "weekdays": [
+      "Mon",
+      "Tue",
+      "Wed",
+      "Thu",
+      "Fri",
+      "Sat",
+      "Sun"
+    ],
     "monthDay": "Day {{day}}",
     "every": "Every",
     "intervalSuffix": "minutes (minimum {{min}} minutes)",
@@ -907,7 +916,7 @@
     "discuss": "Learn with AI",
     "feedbackUseful": "This was helpful",
     "feedbackSkip": "Not interested",
-    "sourceImportHint": "Cards and progress stay on this device. Import Markdown folders from X, Xiaohongshu, or Bilibili.",
+    "sourceImportHint": "Imported material lands in inbox/ first; the AI digests it into sources/ and cites it in cards.",
     "importing": "Importing...",
     "importFolder": "Import a local folder",
     "sourceFrom": "Source: {{source}} · {{path}}",
@@ -915,7 +924,7 @@
     "dailyPushCreated": "Daily delivery is set up",
     "openTasks": "View or pause it in Tasks",
     "scheduleDaily": "Set up daily delivery at 9:00",
-    "scheduleHint": "Daily delivery at 9:00 local time. MyAgents must be running.",
+    "scheduleHint": "The task runs inside the learning workspace: the AI checks what you recently learned before writing each card. Daily at 9:00 local time.",
     "importErrors": {
       "too-many-files": "Import up to 40 Markdown files at a time",
       "total-size-limit": "The total Markdown import must be 2 MB or less",
@@ -923,7 +932,14 @@
       "no-markdown": "No Markdown files were found in that folder",
       "storage-full": "There is not enough local storage to save these files",
       "unknown": "Import failed. Check the Markdown files and try again."
-    }
+    },
+    "workspaceMissing": "The learning workspace is unavailable. Cards, progress, and the daily delivery all live in the \"Learning Coach\" workspace.",
+    "workspaceMissingAction": "Recreate learning workspace",
+    "syncConflict": "The card was just updated by AI; your change could not be saved. Please retry.",
+    "loadingCards": "Loading learning cards…",
+    "relatedLabel": "Related",
+    "scheduleWeekly": "Set up Sunday 21:30 review",
+    "recentUpdates": "AI recently updated: "
   },
   "badges": {
     "category": {

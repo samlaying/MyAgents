@@ -7,7 +7,10 @@ import {
     type Project,
     DEFAULT_SYSTEM_PRESET_WORKSPACE_ID,
     getSystemPresetProjectMetadataPatch,
+    isLearningWorkspaceProject,
+    LEARNING_BUNDLED_WORKSPACE_TEMPLATE_ID,
     normalizeClaudeTranscriptCleanupPeriodDays,
+    type SystemPresetWorkspaceId,
 } from '../types';
 export { mergePresetCustomModels } from '../../../shared/config-types';
 import {
@@ -368,28 +371,48 @@ async function _writeAppConfigLocked(config: AppConfig): Promise<void> {
 
 // ============= Bundled Workspace =============
 
-let _bundledWorkspaceChecked = false;
+const _systemPresetChecked = new Set<SystemPresetWorkspaceId>();
 
-export async function ensureBundledWorkspace(): Promise<boolean> {
-    if (_bundledWorkspaceChecked) return false;
-    _bundledWorkspaceChecked = true;
+async function ensureSystemPresetWorkspace(
+    presetId: SystemPresetWorkspaceId,
+    options: { bypassCache?: boolean } = {},
+): Promise<boolean> {
+    if (_systemPresetChecked.has(presetId) && !options.bypassCache) return false;
+    _systemPresetChecked.add(presetId);
 
     if (isBrowserDevMode()) return false;
 
     try {
         // Lazy import to break circular dep (addProject is in projectService)
-        const { addProject } = await import('./projectService');
-        const { loadProjects } = await import('./projectService');
+        const { addProject, loadProjects, patchProject } = await import('./projectService');
 
-        const { invoke } = await import('@tauri-apps/api/core');
-        const result = await invoke<{ path: string; is_new: boolean }>('cmd_initialize_bundled_workspace');
-        const projects = await loadProjects();
-        const found = projects.find(p => workspacePathsEqual(p.path, result.path));
+        // System presets are singletons keyed by presetId. An existing
+        // registration under ANY path wins — dev instances share config.json
+        // with the real install and must not register a second copy just
+        // because their data dir differs.
+        let projects = await loadProjects();
+        let found = projects.find(p => p.systemPresetId === presetId);
+        let createdPath: string | null = null;
+        let isNew = false;
+
+        if (!found) {
+            const { invoke } = await import('@tauri-apps/api/core');
+            const result = await invoke<{ path: string; is_new: boolean }>('cmd_initialize_bundled_workspace', {
+                templateId: presetId,
+            });
+            createdPath = result.path;
+            isNew = result.is_new;
+            projects = await loadProjects();
+            found = projects.find(p => workspacePathsEqual(p.path, result.path));
+        }
+
+        if (!found && createdPath) {
+            found = await addProject(createdPath);
+        }
 
         if (found) {
-            const metadataPatch = getSystemPresetProjectMetadataPatch(found, DEFAULT_SYSTEM_PRESET_WORKSPACE_ID);
+            const metadataPatch = getSystemPresetProjectMetadataPatch(found, presetId);
             if (Object.keys(metadataPatch).length > 0) {
-                const { patchProject } = await import('./projectService');
                 try {
                     await patchProject(found.id, metadataPatch);
                 } catch (e) {
@@ -397,41 +420,72 @@ export async function ensureBundledWorkspace(): Promise<boolean> {
                     console.warn('[configService] Failed to repair bundled workspace metadata:', e);
                 }
             }
-            return result.is_new;
-        }
-
-        const project = await addProject(result.path);
-        // Set Mino icon and display name for the bundled workspace
-        const { patchProject } = await import('./projectService');
-        try {
-            const metadataPatch = getSystemPresetProjectMetadataPatch(project, DEFAULT_SYSTEM_PRESET_WORKSPACE_ID);
-            await patchProject(project.id, metadataPatch);
-        } catch (e) {
-            if (isLockBusyError(e)) throw e;
-            console.warn('[configService] Failed to set bundled workspace icon:', e);
-        }
-
-        if (result.is_new && !project.hidden) {
-            await withConfigLock(async () => {
-                const config = await loadAppConfig();
-                if (!config.defaultWorkspacePath) {
-                    await _writeAppConfigLocked({ ...config, defaultWorkspacePath: result.path });
+            if (createdPath) {
+                // Only the default preset may claim the unset default workspace
+                // selection; the learning workspace must never steal it.
+                if (presetId === DEFAULT_SYSTEM_PRESET_WORKSPACE_ID && isNew && !found.hidden) {
+                    await withConfigLock(async () => {
+                        const config = await loadAppConfig();
+                        if (!config.defaultWorkspacePath) {
+                            await _writeAppConfigLocked({ ...config, defaultWorkspacePath: createdPath! });
+                        }
+                    });
                 }
-            });
-            console.log('[configService] Bundled workspace initialized:', result.path);
-            return result.is_new;
+                console.log(isNew
+                    ? '[configService] Bundled workspace initialized:'
+                    : '[configService] Bundled workspace recovered into projects:', createdPath);
+            }
+            return isNew || !!createdPath;
         }
 
-        console.log(result.is_new
-            ? '[configService] Bundled workspace initialized without default selection:'
-            : '[configService] Bundled workspace recovered into projects:', result.path);
-        return true;
+        return false;
     } catch (err) {
         if (isLockBusyError(err)) {
-            _bundledWorkspaceChecked = false;
+            _systemPresetChecked.delete(presetId);
             throw err;
         }
-        console.warn('[configService] ensureBundledWorkspace failed:', err);
+        console.warn(`[configService] ensureSystemPresetWorkspace(${presetId}) failed:`, err);
+        return false;
+    }
+}
+
+export async function ensureBundledWorkspace(): Promise<boolean> {
+    return ensureSystemPresetWorkspace(DEFAULT_SYSTEM_PRESET_WORKSPACE_ID);
+}
+
+/** On-demand creation of ONE learning workspace from the bundled template.
+ *  There is no boot-time auto-create — learning workspaces are user-created
+ *  like any other workspace; this exists so the learning panel's empty
+ *  state can offer a one-click bootstrap. No-op when one already exists. */
+export async function ensureLearningWorkspace(): Promise<boolean> {
+    if (isBrowserDevMode()) return false;
+    try {
+        const { addProject, loadProjects, patchProject } = await import('./projectService');
+        if ((await loadProjects()).some(isLearningWorkspaceProject)) return false;
+
+        const { invoke } = await import('@tauri-apps/api/core');
+        const { exists } = await import('@tauri-apps/plugin-fs');
+        const projectsDir = await join(await getConfigDir(), 'projects');
+        let destPath = await join(projectsDir, LEARNING_BUNDLED_WORKSPACE_TEMPLATE_ID);
+        for (let i = 2; await exists(destPath); i++) {
+            destPath = await join(projectsDir, `${LEARNING_BUNDLED_WORKSPACE_TEMPLATE_ID}-${i}`);
+        }
+        await invoke('cmd_create_workspace_from_bundled_template', {
+            templateId: LEARNING_BUNDLED_WORKSPACE_TEMPLATE_ID,
+            destPath,
+        });
+        const project = await addProject(destPath);
+        // templateId/templateSource on the Project drive both 学习 grouping
+        // and the learning agent defaults on the next agent reconcile.
+        await patchProject(project.id, {
+            icon: 'book',
+            displayName: '学习教练',
+            templateId: LEARNING_BUNDLED_WORKSPACE_TEMPLATE_ID,
+            templateSource: 'builtin',
+        });
+        return true;
+    } catch (err) {
+        console.warn('[configService] ensureLearningWorkspace failed:', err);
         return false;
     }
 }

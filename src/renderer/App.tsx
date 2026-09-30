@@ -188,6 +188,7 @@ import {
   getManagedCodexProviderReadiness,
 } from '../shared/config-types';
 import { workspacePathsEqual } from '../shared/workspacePath';
+import { resolveDiscussionWorkspace } from '../shared/discussionWorkspace';
 import type { CapabilityInitialSelect } from '../shared/skillsTypes';
 import {
   ensureSelfAwarenessWorkspace,
@@ -3881,14 +3882,14 @@ export default function App() {
         const projects = configProjectsRef.current.filter(
           isProjectVisibleToUser,
         );
-        if (projects.length === 0) {
+        const workspace = resolveDiscussionWorkspace(projects, {
+          workspaceId,
+          learningMode,
+        });
+        if (!workspace) {
           toastRef.current?.error(t('appChrome.noWorkspaceForDiscussion'));
           return false;
         }
-        const workspace =
-          (workspaceId
-            ? projects.find((p) => p.id === workspaceId)
-            : undefined) ?? projects[0];
 
         // PRD 0.2.3: 从前端唯一 builtin selection helper 解析出成对的 (provider, model)。
         // 早期实现直接吃 config.defaultProviderId、跳过 workspace/agent 两层，导致
@@ -4000,9 +4001,14 @@ export default function App() {
         // resolves to the same id and its later controller update is a no-op for
         // view/agentDir/sessionId.
         const newTab = createNewTab();
-        const discussionTitle = chatTitle
-          ? generateSessionTitle(chatTitle)
-          : t('appChrome.discussionTabTitle');
+        // SessionStore derives and persists the session title from the first
+        // user message. Keep the tab projection aligned with that message too;
+        // a learning-card display title is not the message that was sent.
+        const discussionTitle = learningMode
+          ? generateSessionTitle(discussionPrompt)
+          : chatTitle
+            ? generateSessionTitle(chatTitle)
+            : t('appChrome.discussionTabTitle');
         if (initialMessage.providerExecutionIdentity) {
           if (!openLaunchTabNow(newTab)) return false;
         } else {
@@ -4864,6 +4870,8 @@ export default function App() {
               initialIntervalMinutes={taskCreateIntent.initialIntervalMinutes}
               initialCronExpression={taskCreateIntent.initialCronExpression}
               initialCronTimezone={taskCreateIntent.initialCronTimezone}
+              initialAiCanExit={taskCreateIntent.initialAiCanExit}
+              lockWorkspace={taskCreateIntent.lockWorkspace === true}
               onClose={() => setTaskCreateIntent(null)}
               onDiscuss={handleCreateDialogDiscussion}
               onDispatched={(created) => {

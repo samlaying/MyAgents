@@ -29,8 +29,8 @@
     "capabilities": "Skills & Tools",
     "helper": "AI Helper",
     "settings": "Settings",
-    "workspaces": "Agent Workspaces",
-    "workspaceSection": "Agent Workspaces",
+    "workspaces": "Workspaces",
+    "workspaceSection": "Workspaces",
     "workspaceViewOptions": "Workspace and session view options",
     "allSessions": "All sessions",
     "favoriteSessions": "Favorites only",
@@ -39,7 +39,10 @@
     "archived": "Archived",
     "newChatHere": "Start a new chat here",
     "emptyWorkspaceSessions": "No sessions yet",
-    "loadMore": "Show more"
+    "loadMore": "Show more",
+    "learningSection": "Learning",
+    "agentWorkspaceSection": "Agent Workspaces",
+    "learningEmptyHint": "No learning workspaces yet — use + above to add a folder or create from template"
   },
   "titlebar": {
     "helper": "AI Helper",

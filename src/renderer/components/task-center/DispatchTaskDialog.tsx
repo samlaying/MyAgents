@@ -89,6 +89,13 @@ interface Props {
   initialIntervalMinutes?: number;
   initialCronExpression?: string;
   initialCronTimezone?: string;
+  /** Prefill for the "AI may end this task itself" end condition. Habit-style
+   *  learning tasks pass false so an indefinite routine isn't advertised as
+   *  self-terminable on every wake; the user can still re-enable it here. */
+  initialAiCanExit?: boolean;
+  /** Keep the task pinned to `defaultWorkspacePath` — the learning daily
+   *  push must execute inside the learning workspace for live context. */
+  lockWorkspace?: boolean;
 }
 
 export function DispatchTaskDialog({
@@ -105,6 +112,8 @@ export function DispatchTaskDialog({
   initialIntervalMinutes = 30,
   initialCronExpression = '',
   initialCronTimezone = '',
+  initialAiCanExit = true,
+  lockWorkspace = false,
 }: Props) {
   const isFromThought = !!thought;
   const { t } = useTranslation('task');
@@ -174,7 +183,7 @@ export function DispatchTaskDialog({
   const [endConditionMode, setEndConditionMode] = useState<EndConditionMode>('forever');
   const [deadline, setDeadline] = useState('');
   const [maxExecutions, setMaxExecutions] = useState('');
-  const [aiCanExit, setAiCanExit] = useState(true);
+  const [aiCanExit, setAiCanExit] = useState(initialAiCanExit);
 
   // Notification — uses the shared editor so dispatch / edit stay aligned.
   const [notification, setNotification] = useState<NotificationConfig>({
@@ -511,6 +520,7 @@ export function DispatchTaskDialog({
                   onChange={setWorkspacePath}
                   placeholder={t('dispatch.workspacePlaceholder')}
                   size="md"
+                  disabled={lockWorkspace}
                 />
               </div>
               <textarea
@@ -562,9 +572,10 @@ export function DispatchTaskDialog({
                 onChange={setWorkspacePath}
                 placeholder={t('dispatch.workspacePlaceholder')}
                 size="md"
+                disabled={lockWorkspace}
               />
               <p className="mt-1.5 text-xs text-[var(--ink-muted)]">
-                {t('dispatch.workspaceHint')}
+                {lockWorkspace ? t('dispatch.workspaceLockedHint') : t('dispatch.workspaceHint')}
               </p>
             </div>
 

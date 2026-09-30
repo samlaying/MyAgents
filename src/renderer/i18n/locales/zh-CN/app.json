@@ -29,8 +29,8 @@
     "capabilities": "技能与工具",
     "helper": "小助理",
     "settings": "设置",
-    "workspaces": "Agent 工作区",
-    "workspaceSection": "Agent 工作区",
+    "workspaces": "工作区",
+    "workspaceSection": "工作区",
     "workspaceViewOptions": "工作区与会话显示选项",
     "allSessions": "全部会话",
     "favoriteSessions": "只看收藏",
@@ -39,7 +39,10 @@
     "archived": "已归档",
     "newChatHere": "在此工作区新建对话",
     "emptyWorkspaceSessions": "还没有会话",
-    "loadMore": "展开更多"
+    "loadMore": "展开更多",
+    "learningSection": "学习",
+    "agentWorkspaceSection": "Agent 工作区",
+    "learningEmptyHint": "还没有学习工作区——点右上 + 添加本地文件夹或从模板创建"
   },
   "titlebar": {
     "helper": "小助理",

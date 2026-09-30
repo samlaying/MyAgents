@@ -28,8 +28,10 @@
 //! event_key is deterministic for a given workspace path, tokens are not.
 //!
 //! App rename/move commands emit `{moves: [{oldPath, newPath}]}` immediately
-//! after committing, on this same channel. OS watcher events retain their
-//! coarse workspace-path payload and do not guess rename identity.
+//! after committing, on this same channel. OS watcher events carry the
+//! workspace-relative changed paths as `{paths: [...]}` (no rename identity
+//! is guessed); consumers that only need a coarse signal keep counting
+//! events and ignore the field.
 //!
 //! # Debouncing
 //!
@@ -174,16 +176,30 @@ pub async fn cmd_workspace_watch_start(
     let app_clone = app.clone();
     let event_name = format!("workspace:files-changed:{}", event_key);
     let workspace_path_str = workspace_root.to_string_lossy().to_string();
+    let thread_root = workspace_root.clone();
     std::thread::Builder::new()
         .name(format!("ws-watcher:{}", &event_key[..8]))
         .spawn(move || {
             for result in rx {
                 match result {
-                    Ok(_events) => {
-                        // Coarse signal — frontend re-fetches the tree on its
-                        // own. Keeping the payload minimal avoids serializing
-                        // change-event metadata that the panel ignores.
-                        if let Err(e) = app_clone.emit(&event_name, &workspace_path_str) {
+                    Ok(events) => {
+                        // Coarse signal with the workspace-relative changed
+                        // paths attached — panels that re-fetch the whole tree
+                        // ignore the field, the learning panel surfaces
+                        // per-file "recently updated by AI" entries from it.
+                        let paths: Vec<String> = events
+                            .iter()
+                            .filter_map(|event| event.paths.first())
+                            .filter_map(|path| {
+                                path.strip_prefix(&thread_root)
+                                    .ok()
+                                    .map(|rel| rel.to_string_lossy().to_string())
+                            })
+                            .collect();
+                        if let Err(e) = app_clone.emit(
+                            &event_name,
+                            serde_json::json!({ "paths": paths, "root": workspace_path_str }),
+                        ) {
                             ulog_warn!(
                                 "[workspace_files::watcher] emit failed for {}: {}",
                                 event_name,

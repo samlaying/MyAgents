@@ -495,6 +495,7 @@ pub fn run() {
             i18n::cmd_set_ui_language,
             // Bundled workspace initialization
             commands::cmd_initialize_bundled_workspace,
+            commands::cmd_seed_learning_workspace,
             commands::cmd_create_bot_workspace,
             commands::cmd_remove_bot_workspace,
             // Agent Runtime detection (v0.1.59)

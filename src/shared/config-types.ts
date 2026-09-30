@@ -593,6 +593,17 @@ export interface WorkspaceTemplate {
 export const DEFAULT_BUNDLED_WORKSPACE_TEMPLATE_ID = 'mino';
 export const DEFAULT_SYSTEM_PRESET_WORKSPACE_ID: SystemPresetWorkspaceId =
   'mino';
+export const LEARNING_BUNDLED_WORKSPACE_TEMPLATE_ID = 'learning';
+
+/** A learning workspace is any workspace created from (or adopted into) the
+ *  learning template — there is deliberately NO system-preset singleton:
+ *  users create learning workspaces themselves, exactly like agent
+ *  workspaces. `templateId` is the single grouping marker. */
+export function isLearningWorkspaceProject(
+  project: Pick<Project, 'templateId'> | null | undefined,
+): boolean {
+  return project?.templateId === LEARNING_BUNDLED_WORKSPACE_TEMPLATE_ID;
+}
 
 export function isSystemPresetProject(
   project: Pick<Project, 'workspaceType' | 'systemPresetId'> | null | undefined,
@@ -704,6 +715,20 @@ export const PRESET_TEMPLATES: WorkspaceTemplate[] = [
       memoryEvolution: {
         enabled: true,
       },
+    },
+  },
+  {
+    id: LEARNING_BUNDLED_WORKSPACE_TEMPLATE_ID,
+    name: '学习教练',
+    description:
+      '碎片学习工作区：每日卡片、知识主题与复习计划，学习状态即记忆。',
+    icon: 'book',
+    isBuiltin: true,
+    // No heartbeat / memoryAutoUpdate / memoryEvolution: cards and
+    // 04-LEARNING-STATE.md ARE this workspace's memory; the generic memory
+    // substrate would only add competing maintenance turns.
+    agentDefaults: {
+      enabled: false,
     },
   },
 ];

@@ -105,6 +105,7 @@ Builtin SDK 与 Claude Code / Codex / Gemini 等外部 Runtime 的 session 操�
 | React state / effect 稳定性 | `specs/tech_docs/react_stability_rules.md` |
 | Tool Attachment / 富媒体 / 外部 URL | `specs/tech_docs/tool_attachment_pipeline.md` |
 | 工作区文件、Markdown 编辑、预览与保存 | `specs/tech_docs/workspace_markdown_editor.md`；通用 IO / 路径安全查 `specs/tech_docs/pit_of_success.md` 对应章节 |
+| 学习工作区标准、模板、文件事实源与 UI 投影 | `specs/tech_docs/learning_workspace_contract.md`；文件 IO 细节仍以 `specs/tech_docs/workspace_markdown_editor.md` 为准 |
 | 托管浏览器工具、登录保存、MCP 重连 | `specs/tech_docs/managed_browser.md`；与 UI BrowserPanel、普通 Playwright preset 区分 |
 | Windows 路径、进程 / CSP / WebView | `specs/tech_docs/windows_platform.md`；按问题追加 `specs/tech_docs/windows_ai_review_traps.md` 或 `specs/tech_docs/windows_cross_platform_review.md` |
 | 内置 Node / 三方 Provider / 代理 | `specs/tech_docs/bundled_node.md`、`specs/tech_docs/third_party_providers.md`、`specs/tech_docs/proxy_config.md` 中命中的文档 |

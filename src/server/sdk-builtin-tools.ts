@@ -44,3 +44,21 @@ export const SDK_EXCLUDED_BUILTIN_TOOLS = [
   'PushNotification',
   'DesignSync',
 ] as const;
+
+/**
+ * Session-visible builtin tools for one SDK query.
+ *
+ * WebSearch executes as an Anthropic Messages server-side tool. Through the
+ * OpenAI-protocol bridge (or any non-Claude third-party endpoint) the nested
+ * search call comes back as fabricated tool-call markers instead of results,
+ * so the model retries, fails again and burns the turn. Hide it on those
+ * runtimes and let MCP search servers (e.g. tavily-search-rotating) own web
+ * search; the official Anthropic API and Claude-behind-a-proxy keep it.
+ */
+export function resolveSdkSessionTools(webSearchSupported: boolean): string[] {
+  const tools = [...SDK_BUILTIN_TOOLS];
+  if (!webSearchSupported) {
+    tools.splice(tools.indexOf('WebSearch'), 1);
+  }
+  return tools;
+}

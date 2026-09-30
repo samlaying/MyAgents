@@ -1,17 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import enTask from '@/i18n/locales/en-US/task.json';
 import zhTask from '@/i18n/locales/zh-CN/task.json';
-import { LEARNING_IMPORT_ERRORS, readLearningFolder } from './learningCards';
+import {
+  learningSourceLabel,
+  LEARNING_IMPORT_ERRORS,
+  validateLearningSourceFiles,
+} from './learningCards';
 
-function filesFrom(entries: Array<{ path: string; text: string }>): FileList {
-  return entries.map(({ path, text }) => {
-    const file = new File([text], path.split('/').at(-1) ?? 'note.md', { type: 'text/markdown' });
+function filesFrom(entries: Array<{ path: string; size?: number }>): FileList {
+  return entries.map(({ path, size }) => {
+    const file = new File(['A note'], path.split('/').at(-1) ?? 'note.md', { type: 'text/markdown' });
     Object.defineProperty(file, 'webkitRelativePath', { value: path });
+    if (size !== undefined) Object.defineProperty(file, 'size', { value: size });
     return file;
   }) as unknown as FileList;
 }
 
-describe('readLearningFolder', () => {
+describe('validateLearningSourceFiles', () => {
   it('provides both translations for every declared import error', () => {
     for (const code of Object.values(LEARNING_IMPORT_ERRORS)) {
       expect(enTask.learning.importErrors).toHaveProperty(code);
@@ -19,43 +24,29 @@ describe('readLearningFolder', () => {
     }
   });
 
-  it.each([
-    { entries: Array.from({ length: 41 }, (_, i) => ({ path: `notes/${i}.md`, text: 'A note' })), code: LEARNING_IMPORT_ERRORS.tooManyFiles },
-    { entries: [{ path: 'notes/large.md', text: 'x'.repeat(100_001) }], code: LEARNING_IMPORT_ERRORS.fileSizeLimit },
-    { entries: Array.from({ length: 21 }, (_, i) => ({ path: `notes/${i}.md`, text: 'x'.repeat(100_000) })), code: LEARNING_IMPORT_ERRORS.totalSizeLimit },
-  ])('rejects imports beyond the $code limit', async ({ entries, code }) => {
-    await expect(readLearningFolder(filesFrom(entries))).rejects.toThrow(code);
-  });
-
-  it('ignores body title fields and never promotes an image URL to the source', async () => {
-    const [card] = await readLearningFolder(filesFrom([{
-      path: 'notes/example.md', text: 'title: An unrelated body field\n\n![cover](https://images.example/cover.png)',
-    }]));
-    expect(card.title).toBe('example');
-    expect(card.sourceUrl).toBeUndefined();
-  });
-
-  it('keeps distinct nested source paths and only classifies known source folders', async () => {
-    const cards = await readLearningFolder(filesFrom([
-      { path: 'X/author/posts/note.md', text: '# Note\nA short note.' },
-      { path: 'personal/posts/note.md', text: '# Note\nAnother short note.' },
+  it('keeps only markdown files and returns them for copying', () => {
+    const files = validateLearningSourceFiles(filesFrom([
+      { path: 'notes/a.md' },
+      { path: 'notes/b.txt' },
+      { path: 'notes/c.MD' },
     ]));
-
-    expect(cards[0].category).toBe('X');
-    expect(cards[1].category).toBe('本地资料');
-    expect(cards[0].id).not.toBe(cards[1].id);
+    expect(files.map((file) => file.name)).toEqual(['a.md', 'c.MD']);
   });
 
-  it('reads title only from frontmatter and preserves code symbols in content', async () => {
-    const [card] = await readLearningFolder(filesFrom([{
-      path: 'notes/example.md',
-      text: '---\ntitle: "A useful note"\nurl: https://frontmatter.example\n---\nC# uses snake_case and #3 is a heading in a list.\n\nSee [the source](https://content.example/page).',
-    }]));
+  it.each([
+    { entries: Array.from({ length: 41 }, (_, i) => ({ path: `notes/${i}.md` })), code: LEARNING_IMPORT_ERRORS.tooManyFiles },
+    { entries: [{ path: 'notes/large.md', size: 100_001 }], code: LEARNING_IMPORT_ERRORS.fileSizeLimit },
+    { entries: Array.from({ length: 21 }, (_, i) => ({ path: `notes/${i}.md`, size: 100_000 })), code: LEARNING_IMPORT_ERRORS.totalSizeLimit },
+  ])('rejects imports beyond the $code limit', ({ entries, code }) => {
+    expect(() => validateLearningSourceFiles(filesFrom(entries))).toThrow(code);
+  });
+});
 
-    expect(card.title).toBe('A useful note');
-    expect(card.body).toContain('C#');
-    expect(card.body).toContain('snake_case');
-    expect(card.body).toContain('#3');
-    expect(card.sourceUrl).toBe('https://content.example/page');
+describe('learningSourceLabel', () => {
+  it('classifies known source folders and defaults to 本地资料', () => {
+    expect(learningSourceLabel('xhs/author/posts/note.md')).toBe('小红书');
+    expect(learningSourceLabel('bili/favorites/note.md')).toBe('B 站');
+    expect(learningSourceLabel('x/posts/note.md')).toBe('X');
+    expect(learningSourceLabel('Dropbox/notes/note.md')).toBe('本地资料');
   });
 });

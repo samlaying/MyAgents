@@ -132,7 +132,7 @@ Node → Rust 的反向调用只经过 localhost Management API。应用级资�
 | 新定时自动化 | Rust TaskStore；Cron 只是兼容 surface |
 | Session Goal | SessionGoalManager |
 | Record、录音与转录结果 | RecordStore / RecordingManager / SpeechRecognitionManager |
-| 工作区文件 | Tauri `cmd_workspace_*` 与 `useWorkspaceFileService()`；[Markdown 编辑器与文件生命周期](tech_docs/workspace_markdown_editor.md) |
+| 工作区文件 | Tauri `cmd_workspace_*` 与 `useWorkspaceFileService()`；[Markdown 编辑器与文件生命周期](tech_docs/workspace_markdown_editor.md)；学习文件边界见[学习工作区契约](tech_docs/learning_workspace_contract.md) |
 | Cloud 登录与 Registered Agent 本地状态 | Rust Space connector |
 
 兼容旧格式的读取或迁移不构成第二个 writer。具体数据格式、锁序与恢复协议由各模块技术文档维护。
@@ -199,7 +199,7 @@ Record 的物理音轨与媒体时钟由 RecordingManager 持有；Media Worker 
 | Agent / IM | Rust Agent/Channel lifecycle；Node Session 执行 | [IM 集成](./tech_docs/im_integration_architecture.md) |
 | Plugin Bridge | 独立 Node 进程；OpenClaw plugin 与 SDK shim | [Plugin Bridge](./tech_docs/plugin_bridge_architecture.md) |
 | Claude Plugin | Node；Claude Plugin 安装、选择与 SDK projection | [Plugin 加载](./tech_docs/plugin_loading.md) |
-| Workspace IO | Rust；路径安全、文件 CRUD、watcher 与系统打开 | [Pit-of-Success](./tech_docs/pit_of_success.md)、[Markdown 编辑与预览](./tech_docs/workspace_markdown_editor.md) |
+| Workspace IO | Rust；路径安全、文件 CRUD、watcher 与系统打开 | [Pit-of-Success](./tech_docs/pit_of_success.md)、[Markdown 编辑与预览](./tech_docs/workspace_markdown_editor.md)、[学习工作区契约](./tech_docs/learning_workspace_contract.md) |
 | Skill 安装 | Node；受限 source snapshot、staging 与原子发布 | [Skill Marketplace](./guides/skill_marketplace.md) |
 | Tool Attachment | Node/Rust 数据面；统一 attachment wire、持久引用与安全读取 | [Tool Attachment](./tech_docs/tool_attachment_pipeline.md) |
 | Document Processing | Rust manager + 独立 Document Worker | [文档转换](./tech_docs/document_processing.md) |

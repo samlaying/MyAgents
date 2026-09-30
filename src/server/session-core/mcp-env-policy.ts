@@ -44,6 +44,17 @@ export function buildMcpSubprocessEnv(
     }
   }
 
+  // Forwarding *_PROXY alone is a no-op for Node-based MCP children: the
+  // undici-backed global `fetch` ignores those variables unless Node >= 24
+  // sees NODE_USE_ENV_PROXY. Without it, a child such as the Tavily stdio
+  // forwarder goes direct and fails whenever only a system proxy can reach
+  // the endpoint. Inert for non-Node children and older runtimes; the merged
+  // NO_PROXY above keeps localhost traffic out of the proxy, and per-server
+  // env below can still override (e.g. NODE_USE_ENV_PROXY='0').
+  if (OUTBOUND_PROXY_ENV_KEYS.some(key => Boolean(parentEnv[key]))) {
+    env.NODE_USE_ENV_PROXY = '1';
+  }
+
   const userNoProxy = nonEmpty(serverEnv?.NO_PROXY);
   const userNoProxyLower = nonEmpty(serverEnv?.no_proxy);
   const explicitNoProxy = userNoProxy ?? userNoProxyLower;

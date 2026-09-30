@@ -1,7 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { SDK_BUILTIN_TOOLS, SDK_EXCLUDED_BUILTIN_TOOLS } from './sdk-builtin-tools';
+import {
+  SDK_BUILTIN_TOOLS,
+  SDK_EXCLUDED_BUILTIN_TOOLS,
+  resolveSdkSessionTools,
+} from './sdk-builtin-tools';
 
 describe('Claude Agent SDK builtin catalog', () => {
   it('keeps the product-owned 29-tool catalog exact and duplicate-free', () => {
@@ -62,6 +66,20 @@ describe('Claude Agent SDK builtin catalog', () => {
     }
 
     const sessionSource = readFileSync(new URL('agent-session.ts', import.meta.url), 'utf8');
-    expect(sessionSource).toContain('tools: [...SDK_BUILTIN_TOOLS]');
+    expect(sessionSource).toContain('tools: resolveSdkSessionTools(webSearchVisible)');
+  });
+
+  it('exposes the full catalog when the provider supports server-side WebSearch', () => {
+    expect(resolveSdkSessionTools(true)).toEqual([...SDK_BUILTIN_TOOLS]);
+  });
+
+  it('hides only WebSearch on runtimes where the builtin search cannot execute', () => {
+    const tools = resolveSdkSessionTools(false);
+
+    expect(tools).not.toContain('WebSearch');
+    expect(tools).toEqual(SDK_BUILTIN_TOOLS.filter(tool => tool !== 'WebSearch'));
+    expect(tools).toHaveLength(SDK_BUILTIN_TOOLS.length - 1);
+    // WebFetch stays: it is client-side and works through any endpoint.
+    expect(tools).toContain('WebFetch');
   });
 });

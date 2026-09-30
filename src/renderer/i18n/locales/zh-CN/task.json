@@ -320,7 +320,8 @@
       "dispatched": "任务「{{name}}」已派发，AI 正在执行",
       "startFailed": "任务已创建，但启动执行失败：{{message}}",
       "created": "任务「{{name}}」已创建"
-    }
+    },
+    "workspaceLockedHint": "此任务固定在所选工作区运行，不可更换。"
   },
   "execution": {
     "modes": {
@@ -646,7 +647,15 @@
       "weekly": "每周",
       "monthly": "每月"
     },
-    "weekdays": ["一", "二", "三", "四", "五", "六", "日"],
+    "weekdays": [
+      "一",
+      "二",
+      "三",
+      "四",
+      "五",
+      "六",
+      "日"
+    ],
     "monthDay": "{{day}} 号",
     "every": "每",
     "intervalSuffix": "分钟触发一次(最少 {{min}} 分钟)",
@@ -907,7 +916,7 @@
     "discuss": "和 AI 多轮学",
     "feedbackUseful": "这条有帮助",
     "feedbackSkip": "不感兴趣",
-    "sourceImportHint": "卡片和进度仅保存在本机。选择 X、小红书或 B 站的 Markdown 内容目录来导入。",
+    "sourceImportHint": "导入的资料先进 inbox/，AI 出卡时消化并归入 sources/、在卡片里引用。",
     "importing": "正在导入…",
     "importFolder": "导入本地资料目录",
     "sourceFrom": "来源：{{source}} · {{path}}",
@@ -915,7 +924,7 @@
     "dailyPushCreated": "每日推送任务已创建",
     "openTasks": "到任务列表查看或暂停",
     "scheduleDaily": "设置每日 9:00 推送",
-    "scheduleHint": "默认每天本地时间 9:00 推送，需保持 MyAgents 运行。",
+    "scheduleHint": "任务固定在学习工作区运行：AI 会先看最近学了什么再出卡，每天本地时间 9:00 推送。",
     "importErrors": {
       "too-many-files": "一次最多导入 40 个 Markdown 文件",
       "total-size-limit": "一次导入的 Markdown 总大小不能超过 2 MB",
@@ -923,7 +932,14 @@
       "no-markdown": "所选目录里没有 Markdown 文件",
       "storage-full": "本机空间不足，无法保存这些资料",
       "unknown": "导入失败，请检查 Markdown 文件后重试"
-    }
+    },
+    "workspaceMissing": "学习工作区不可用。卡片、进度和每日推送都存放在「学习教练」工作区里。",
+    "workspaceMissingAction": "重建学习工作区",
+    "syncConflict": "卡片刚被 AI 更新，本次修改未能保存，请重试。",
+    "loadingCards": "正在读取学习卡片…",
+    "relatedLabel": "关联",
+    "scheduleWeekly": "设置每周日 21:30 复盘",
+    "recentUpdates": "AI 最近更新："
   },
   "badges": {
     "category": {

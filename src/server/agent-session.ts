@@ -6,7 +6,7 @@ import { join, resolve } from 'path';
 import { createRequire } from 'module';
 import { query, getSessionMessages as sdkGetSessionMessages, forkSession as sdkForkSession, deleteSession as sdkDeleteSession, type Query, type SDKUserMessage, type AgentDefinition, type HookInput, type HookJSONOutput, type PreToolUseHookInput, type PostToolUseHookInput, type PermissionRequestHookInput, type SlashCommand as SdkSlashCommand } from '@anthropic-ai/claude-agent-sdk';
 import { isRetiredBundledMcpServer } from '../shared/mcpConfig';
-import { SDK_BUILTIN_TOOLS } from './sdk-builtin-tools';
+import { resolveSdkSessionTools } from './sdk-builtin-tools';
 import type { CanUseTool, McpServerProvenance } from '@anthropic-ai/claude-agent-sdk';
 import type { ToolPermissionHints } from '../shared/types/toolPermission';
 import { isContextInjectedSdkTool, toolPermissionGrantKey } from './utils/sdk-tool-permission';
@@ -11181,6 +11181,15 @@ async function startStreamingSession(preWarm = false): Promise<void> {
       ? { type: 'adaptive' as const }
       : { type: 'disabled' as const };
 
+    // WebSearch runs as an Anthropic server-side tool: through the bridge or
+    // any non-Claude endpoint it returns fabricated tool-call markers instead
+    // of results (observed with deepseek via chat_completions — the model
+    // retried, then fell back to WebFetch scraping). Hide it there so MCP
+    // search servers own web search on those runtimes; same URL-vs-model
+    // stance as thinkingConfig above, so official API and Claude-behind-a-
+    // proxy keep the builtin.
+    const webSearchVisible = isOfficialAnthropicApi || isClaudeModel;
+
     // Build MCP set ONCE so we both pass it to query() and capture its fingerprint.
     // Capturing here (not inline in commonQueryOptions) lets ensureSdkMcpInSync() later
     // diff the live SDK set against newly-arriving context-injected MCPs (im-media,
@@ -11342,7 +11351,7 @@ async function startStreamingSession(preWarm = false): Promise<void> {
       mcpServers: sdkMcpServersInitial,
       // Product visibility boundary. Permission policy remains separately
       // owned by allowedTools/disallowedTools/canUseTool/Hooks below.
-      tools: [...SDK_BUILTIN_TOOLS],
+      tools: resolveSdkSessionTools(webSearchVisible),
       // PRD 0.2.17 — Claude plugin injection. SDK accepts
       // `plugins: [{ type: 'local', path }]`; it then scans each path for
       // .claude-plugin/plugin.json and wires up the contained

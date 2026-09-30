@@ -67,13 +67,16 @@ import { useToast } from '@/components/Toast';
 import { AddWorkspaceMenu, TemplateLibraryDialog } from '@/components/launcher';
 import WorkspaceIcon from '@/components/launcher/WorkspaceIcon';
 import { sortLauncherProjects } from '@/components/launcher/workspaceSort';
+import type { AddProjectOptions } from '@/config/ConfigProvider';
 import { MenuItem } from '@/components/ui/MenuItem';
 import { Popover } from '@/components/ui/Popover';
 import {
   isProjectActiveForUser,
   isProjectArchived,
   isProjectVisibleToUser,
+  isLearningWorkspaceProject,
   isSystemPresetProject,
+  LEARNING_BUNDLED_WORKSPACE_TEMPLATE_ID,
   type Project,
   type WorkspaceTemplate,
 } from '@/config/types';
@@ -433,6 +436,9 @@ export default memo(function GlobalSidebar({
   const [pathDialogOpen, setPathDialogOpen] = useState(false);
   const [pendingFolderName, setPendingFolderName] = useState('');
   const [pendingDefaultPath, setPendingDefaultPath] = useState('');
+  // Carries the caller's adopt options (learning vs plain) through the
+  // browser-dev path-name dialog to handlePathConfirm.
+  const [pendingAddOptions, setPendingAddOptions] = useState<AddProjectOptions | undefined>(undefined);
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [projectToRemove, setProjectToRemove] = useState<Project | null>(null);
   const [agentWorkspacePath, setAgentWorkspacePath] = useState<string | null>(null);
@@ -728,13 +734,30 @@ export default memo(function GlobalSidebar({
     }));
   }, []);
 
-  const handleAddFolder = useCallback(async () => {
+  // Adopting a folder into 学习 upgrades it in place: the learning contract
+  // (CLAUDE.md + rules + directory skeleton) is seeded, merge-only — the
+  // user's own files are never touched. Seed cards stay exclusive to
+  // template-created workspaces.
+  const maybeSeedLearningWorkspace = useCallback(async (path: string, options?: AddProjectOptions) => {
+    if (options?.templateId !== LEARNING_BUNDLED_WORKSPACE_TEMPLATE_ID) return;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('cmd_seed_learning_workspace', { target: path });
+    } catch (error) {
+      // Seeding is best-effort on top of the user's own folder — a failure
+      // must not block adoption, the workspace still registers.
+      console.warn('[GlobalSidebar] Learning workspace seeding skipped:', error);
+    }
+  }, []);
+
+  const handleAddFolder = useCallback(async (options?: AddProjectOptions) => {
     try {
       if (isBrowserDevMode()) {
         const folderInfo = await pickFolderForDialog();
         if (!folderInfo) return;
         setPendingFolderName(folderInfo.folderName);
         setPendingDefaultPath(folderInfo.defaultPath);
+        setPendingAddOptions(options);
         rememberChildLayerOrigin();
         setPathDialogOpen(true);
         return;
@@ -744,17 +767,32 @@ export default memo(function GlobalSidebar({
         multiple: false,
         title: tLauncher('dialogs.pickProjectFolder'),
       });
-      if (typeof selected === 'string') await addProject(selected);
+      if (typeof selected === 'string') {
+        await maybeSeedLearningWorkspace(selected, options);
+        await addProject(selected, options);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       toastRef.current.error(tLauncher('toasts.addProjectFailed', { message }));
     }
-  }, [addProject, rememberChildLayerOrigin, tLauncher]);
+  }, [addProject, maybeSeedLearningWorkspace, rememberChildLayerOrigin, tLauncher]);
+
+  const handleAddLearningFolder = useCallback(
+    () => handleAddFolder({
+      // Adopting a local folder into 学习: the learning templateId is the
+      // grouping marker AND carries the learning agent defaults.
+      templateId: LEARNING_BUNDLED_WORKSPACE_TEMPLATE_ID,
+      templateSource: 'builtin',
+      agentDefaults: { enabled: false },
+    }),
+    [handleAddFolder],
+  );
 
   const handlePathConfirm = useCallback(async (path: string) => {
     setPathDialogOpen(false);
     try {
-      await addProject(path);
+      await maybeSeedLearningWorkspace(path, pendingAddOptions);
+      await addProject(path, pendingAddOptions);
       const normalizedPath = path.replace(/\\/g, '/');
       const parentDir = normalizedPath.split('/').slice(0, -1).join('/');
       if (parentDir) window.localStorage.setItem('myagents:lastProjectDir', parentDir);
@@ -762,9 +800,10 @@ export default memo(function GlobalSidebar({
       const message = error instanceof Error ? error.message : String(error);
       toastRef.current.error(tLauncher('toasts.addProjectFailed', { message }));
     } finally {
+      setPendingAddOptions(undefined);
       restoreChildLayerFocus();
     }
-  }, [addProject, restoreChildLayerFocus, tLauncher]);
+  }, [addProject, maybeSeedLearningWorkspace, pendingAddOptions, restoreChildLayerFocus, tLauncher]);
 
   const handleCreateFromTemplate = useCallback(async (
     path: string,
@@ -1011,6 +1050,7 @@ export default memo(function GlobalSidebar({
         showAutomationSessions: !current.showAutomationSessions,
       }))}
       onAddFolder={handleAddFolder}
+      onAddLearningFolder={handleAddLearningFolder}
       onCreateFromTemplate={() => {
         rememberChildLayerOrigin();
         setTemplateDialogOpen(true);
@@ -1494,6 +1534,9 @@ interface WorkspaceTreeProps {
   onSetSessionView: (view: 'all' | 'favorites') => void;
   onToggleAutomation: () => void;
   onAddFolder: () => void;
+  /** Add-folder variant that adopts the picked folder as a LEARNING
+   *  workspace (tagged with the learning templateId so it groups under 学习). */
+  onAddLearningFolder: () => void;
   onCreateFromTemplate: () => void;
   onOpenWorkspace: (project: Project) => void;
   onOpenSession: (session: SessionMetadata, project: Project) => void;
@@ -1603,6 +1646,7 @@ function WorkspaceTree({
   onSetSessionView,
   onToggleAutomation,
   onAddFolder,
+  onAddLearningFolder,
   onCreateFromTemplate,
   onOpenWorkspace,
   onOpenSession,
@@ -1675,67 +1719,119 @@ function WorkspaceTree({
   }, [onNestedInteractionChange]);
   useNestedInteractionCleanup((open) => onNestedInteractionChange('view-options', open));
 
+  // 学习 is a peer SECTION of「Agent 工作区」: partition the visible list by
+  // the shared learning marker (templateId) so learning workspaces render
+  // under their own label while every other workspace stays in the agent group.
+  const learningProjects = useMemo(
+    () => projects.filter(isLearningWorkspaceProject),
+    [projects],
+  );
+  const agentProjects = useMemo(
+    () => projects.filter((project) => !isLearningWorkspaceProject(project)),
+    [projects],
+  );
+
+  const renderWorkspaceEntry = (project: Project, index: number) => {
+    const key = normalizeWorkspacePathIdentity(project.path);
+    const sessions = sessionsByWorkspace.get(key) ?? [];
+    const limit = sessionLimits[key] ?? SESSION_PAGE_SIZE;
+    const workspaceSessionState = taskCenterData.workspaceSessionStates.get(key);
+    const isActiveWorkspaceContext = activeWorkspaceKey === key;
+    return (
+      <div
+        key={project.id}
+        ref={(node) => {
+          if (node) workspaceRefs.current.set(key, node);
+          else workspaceRefs.current.delete(key);
+        }}
+      >
+        <WorkspaceRow
+          project={project}
+          expanded={expandedSet.has(key)}
+          active={isActiveWorkspaceContext && !activeSessionId}
+          actionTipPosition={index === 0 ? 'bottom' : 'top'}
+          onToggle={() => onToggleWorkspace(project)}
+          onOpenWorkspace={() => onOpenWorkspace(project)}
+          onTogglePin={() => onTogglePin(project)}
+          onAgentSettings={(origin) => onAgentSettings(project, origin)}
+          onArchive={() => onArchive(project)}
+          onOpenFolder={() => onOpenFolder(project)}
+          onRemove={(origin) => onRemove(project, origin)}
+          onMenuOpenChange={(open) => onNestedInteractionChange(`workspace:${project.id}`, open)}
+        />
+        <WorkspaceSessionBranch expanded={expandedSet.has(key)}>
+            {workspaceSessionState?.isLoading && sessions.length === 0 ? (
+              <div className="space-y-1 py-1" data-global-sidebar-session-placeholder>
+                {[0, 1, 2].map((item) => (
+                  <div key={item} className="h-9" aria-hidden="true" />
+                ))}
+              </div>
+            ) : (
+              <>
+                {workspaceSessionState?.error && (
+                  <div className="my-1 rounded-lg border border-dashed border-[var(--line)] px-3 py-2">
+                    <div className="flex items-center gap-2 text-xs text-[var(--warning)]">
+                      <AlertCircle className="h-3.5 w-3.5" />
+                      <span className="min-w-0 flex-1 truncate">{workspaceSessionState.error}</span>
+                      <button
+                        type="button"
+                        onClick={() => ensureWorkspaceSessions([project.path], true)}
+                        className="rounded-md p-1 hover:bg-[var(--paper-inset)]"
+                        aria-label={tLauncher('rightRail.retry')}
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {sessions.length === 0 && !workspaceSessionState?.error ? (
+                  <p className="px-3 py-2 text-xs text-[var(--ink-muted)]/70">
+                    {sessionView === 'favorites'
+                      ? tLauncher('rightRail.emptyFavorites')
+                      : t('globalSidebar.emptyWorkspaceSessions')}
+                  </p>
+                ) : sessions.slice(0, limit).map((session) => (
+                  <SessionRow
+                    key={session.id}
+                    session={session}
+                    project={project}
+                    tab={tabBySession.get(session.id)}
+                    active={activeTab?.view === 'chat' && activeTab.sessionId === session.id}
+                    tags={taskCenterData.sessionTagsMap.get(session.id) ?? EMPTY_TAGS}
+                    unreadNotificationCount={sessionNotificationBadgeCounts?.get(session.id) ?? 0}
+                    deleteProtected={taskCenterData.deleteProtectedSessionIds.has(session.id)}
+                    onOpen={() => onOpenSession(session, project)}
+                    onToggleFavorite={() => onToggleFavorite(session)}
+                    onTogglePin={() => onToggleSessionPin(session)}
+                    onRenameSession={onRenameSession}
+                    onCopySessionId={() => onCopySessionId(session)}
+                    onShowStats={(origin) => onShowStats(session, origin)}
+                    onDelete={(origin) => onDeleteSession(session, origin)}
+                    onSessionMutationStart={taskCenterData.actions.beginSessionMetadataMutation}
+                    onSessionUpdated={taskCenterData.actions.applySessionMetadata}
+                    onGlobalTagChange={taskCenterData.actions.refreshSessions}
+                    onMenuOpenChange={(open) => onNestedInteractionChange(`session:${session.id}`, open)}
+                  />
+                ))}
+                {limit < sessions.length && (
+                  <button
+                    type="button"
+                    onClick={() => onLoadMore(project, sessions.length)}
+                    className="flex h-9 w-full items-center gap-2 rounded-lg px-3 text-xs font-medium text-[var(--ink-muted)] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--ink)]"
+                  >
+                    <ChevronDown className="h-3.5 w-3.5" />
+                    {t('globalSidebar.loadMore')}
+                  </button>
+                )}
+              </>
+            )}
+        </WorkspaceSessionBranch>
+      </div>
+    );
+  };
+
   return (
     <section className="relative flex h-full min-h-0 flex-col" aria-label={t('globalSidebar.workspaces')}>
-      <div className="flex h-8 shrink-0 items-center gap-1 px-3">
-        <h2 className="min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-wider text-[var(--ink-muted)]">
-          {t('globalSidebar.workspaceSection')}
-        </h2>
-        <Tip label={tLauncher('workspaceCard.more')} position="bottom" align="end" disabled={viewMenuOpen}>
-          <button
-            ref={viewMenuRef}
-            type="button"
-            onClick={() => setViewMenu(!viewMenuOpen)}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--ink-muted)] transition-colors hover:bg-[var(--paper-inset)] hover:text-[var(--ink)]"
-            aria-label={t('globalSidebar.workspaceViewOptions')}
-          >
-            <MoreHorizontal className="h-4 w-4" />
-          </button>
-        </Tip>
-        <Popover
-          open={viewMenuOpen}
-          onClose={() => setViewMenu(false)}
-          anchorRef={viewMenuRef}
-          placement="bottom-end"
-          className="global-sidebar-nested-layer w-56 py-1"
-        >
-          <MenuItem
-            icon={sessionView === 'all' ? <Check className="h-3.5 w-3.5" /> : <LayoutGrid className="h-3.5 w-3.5" />}
-            label={t('globalSidebar.allSessions')}
-            active={sessionView === 'all'}
-            onClick={() => { onSetSessionView('all'); setViewMenu(false); }}
-          />
-          <MenuItem
-            icon={sessionView === 'favorites' ? <Check className="h-3.5 w-3.5" /> : <Star className="h-3.5 w-3.5" />}
-            label={t('globalSidebar.favoriteSessions')}
-            active={sessionView === 'favorites'}
-            onClick={() => { onSetSessionView('favorites'); setViewMenu(false); }}
-          />
-          <MenuItem
-            icon={showAutomationSessions ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-            label={showAutomationSessions
-              ? t('globalSidebar.hideAutomationHistory')
-              : t('globalSidebar.showAutomationHistory')}
-            onClick={() => { onToggleAutomation(); setViewMenu(false); }}
-          />
-        </Popover>
-        <AddWorkspaceMenu
-          variant="icon"
-          onAddFolder={onAddFolder}
-          onCreateFromTemplate={onCreateFromTemplate}
-          onOpenChange={(open) => onNestedInteractionChange('add-workspace', open)}
-        />
-      </div>
-
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-8 z-10 h-2"
-        style={{
-          background: 'linear-gradient(to bottom, var(--global-sidebar-bg), var(--global-sidebar-bg-a0))',
-        }}
-        data-global-sidebar-workspace-fade-top
-      />
-
       <div
         className={`min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pt-2 ${fadeBottom ? 'pb-6' : 'pb-3'}`}
         role="tree"
@@ -1762,119 +1858,87 @@ function WorkspaceTree({
               </button>
             </div>
           </div>
-        ) : projects.length === 0 && archivedProjects.length === 0 ? (
-          <div className="px-3 py-8 text-center">
-            <p className="text-sm font-medium text-[var(--ink)]">{tLauncher('rightRail.emptyWorkspaceTitle')}</p>
-            <p className="mt-1 text-xs text-[var(--ink-muted)]">{tLauncher('rightRail.emptyWorkspaceDescription')}</p>
-            <button
-              type="button"
-              onClick={onAddFolder}
-              className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-[var(--button-primary-bg)] px-3 py-2 text-sm font-medium text-[var(--button-primary-text)] hover:bg-[var(--button-primary-bg-hover)]"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              {tLauncher('rightRail.addFolder')}
-            </button>
-          </div>
         ) : (
           <div data-global-sidebar-workspace-list>
-            {projects.map((project, index) => {
-              const key = normalizeWorkspacePathIdentity(project.path);
-              const sessions = sessionsByWorkspace.get(key) ?? [];
-              const limit = sessionLimits[key] ?? SESSION_PAGE_SIZE;
-              const workspaceSessionState = taskCenterData.workspaceSessionStates.get(key);
-              const isActiveWorkspaceContext = activeWorkspaceKey === key;
-              return (
-                <div
-                  key={project.id}
-                  ref={(node) => {
-                    if (node) workspaceRefs.current.set(key, node);
-                    else workspaceRefs.current.delete(key);
-                  }}
+            {/* 学习 section — always visible; it owns its own add-folder /
+                create-from-template entry, mirroring the agent section. */}
+            <div data-global-sidebar-learning-group>
+              <div className="flex h-8 items-center gap-1 pl-3 pr-1">
+                <h3 className="min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-wider text-[var(--ink-muted)]">
+                  {t('globalSidebar.learningSection')}
+                </h3>
+                <AddWorkspaceMenu
+                  variant="icon"
+                  onAddFolder={onAddLearningFolder}
+                  onCreateFromTemplate={onCreateFromTemplate}
+                  onOpenChange={(open) => onNestedInteractionChange('add-learning-workspace', open)}
+                />
+              </div>
+              {learningProjects.length > 0
+                ? learningProjects.map((project, index) => renderWorkspaceEntry(project, index))
+                : (
+                  <p className="px-3 pb-2 text-xs text-[var(--ink-muted)]/70">
+                    {t('globalSidebar.learningEmptyHint')}
+                  </p>
+                )}
+            </div>
+
+            {/* Agent 工作区 section — sibling of 学习, same capabilities. */}
+            <div className="flex h-8 items-center gap-1 pl-3 pr-1">
+              <h3 className="min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-wider text-[var(--ink-muted)]">
+                {t('globalSidebar.agentWorkspaceSection')}
+              </h3>
+              <Tip label={tLauncher('workspaceCard.more')} position="bottom" align="end" disabled={viewMenuOpen}>
+                <button
+                  ref={viewMenuRef}
+                  type="button"
+                  onClick={() => setViewMenu(!viewMenuOpen)}
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--ink-muted)] transition-colors hover:bg-[var(--paper-inset)] hover:text-[var(--ink)]"
+                  aria-label={t('globalSidebar.workspaceViewOptions')}
                 >
-                  <WorkspaceRow
-                    project={project}
-                    expanded={expandedSet.has(key)}
-                    active={isActiveWorkspaceContext && !activeSessionId}
-                    actionTipPosition={index === 0 ? 'bottom' : 'top'}
-                    onToggle={() => onToggleWorkspace(project)}
-                    onOpenWorkspace={() => onOpenWorkspace(project)}
-                    onTogglePin={() => onTogglePin(project)}
-                    onAgentSettings={(origin) => onAgentSettings(project, origin)}
-                    onArchive={() => onArchive(project)}
-                    onOpenFolder={() => onOpenFolder(project)}
-                    onRemove={(origin) => onRemove(project, origin)}
-                    onMenuOpenChange={(open) => onNestedInteractionChange(`workspace:${project.id}`, open)}
-                  />
-                  <WorkspaceSessionBranch expanded={expandedSet.has(key)}>
-                      {workspaceSessionState?.isLoading && sessions.length === 0 ? (
-                        <div className="space-y-1 py-1" data-global-sidebar-session-placeholder>
-                          {[0, 1, 2].map((item) => (
-                            <div key={item} className="h-9" aria-hidden="true" />
-                          ))}
-                        </div>
-                      ) : (
-                        <>
-                          {workspaceSessionState?.error && (
-                            <div className="my-1 rounded-lg border border-dashed border-[var(--line)] px-3 py-2">
-                              <div className="flex items-center gap-2 text-xs text-[var(--warning)]">
-                                <AlertCircle className="h-3.5 w-3.5" />
-                                <span className="min-w-0 flex-1 truncate">{workspaceSessionState.error}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => ensureWorkspaceSessions([project.path], true)}
-                                  className="rounded-md p-1 hover:bg-[var(--paper-inset)]"
-                                  aria-label={tLauncher('rightRail.retry')}
-                                >
-                                  <RefreshCw className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                          {sessions.length === 0 && !workspaceSessionState?.error ? (
-                            <p className="px-3 py-2 text-xs text-[var(--ink-muted)]/70">
-                              {sessionView === 'favorites'
-                                ? tLauncher('rightRail.emptyFavorites')
-                                : t('globalSidebar.emptyWorkspaceSessions')}
-                            </p>
-                          ) : sessions.slice(0, limit).map((session) => (
-                            <SessionRow
-                              key={session.id}
-                              session={session}
-                              project={project}
-                              tab={tabBySession.get(session.id)}
-                              active={activeTab?.view === 'chat' && activeTab.sessionId === session.id}
-                              tags={taskCenterData.sessionTagsMap.get(session.id) ?? EMPTY_TAGS}
-                              unreadNotificationCount={sessionNotificationBadgeCounts?.get(session.id) ?? 0}
-                              deleteProtected={taskCenterData.deleteProtectedSessionIds.has(session.id)}
-                              onOpen={() => onOpenSession(session, project)}
-                              onToggleFavorite={() => onToggleFavorite(session)}
-                              onTogglePin={() => onToggleSessionPin(session)}
-                              onRenameSession={onRenameSession}
-                              onCopySessionId={() => onCopySessionId(session)}
-                              onShowStats={(origin) => onShowStats(session, origin)}
-                              onDelete={(origin) => onDeleteSession(session, origin)}
-                              onSessionMutationStart={taskCenterData.actions.beginSessionMetadataMutation}
-                              onSessionUpdated={taskCenterData.actions.applySessionMetadata}
-                              onGlobalTagChange={taskCenterData.actions.refreshSessions}
-                              onMenuOpenChange={(open) => onNestedInteractionChange(`session:${session.id}`, open)}
-                            />
-                          ))}
-                          {limit < sessions.length && (
-                            <button
-                              type="button"
-                              onClick={() => onLoadMore(project, sessions.length)}
-                              className="flex h-9 w-full items-center gap-2 rounded-lg px-3 text-xs font-medium text-[var(--ink-muted)] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--ink)]"
-                            >
-                              <ChevronDown className="h-3.5 w-3.5" />
-                              {t('globalSidebar.loadMore')}
-                            </button>
-                          )}
-                        </>
-                      )}
-                  </WorkspaceSessionBranch>
-                </div>
-              );
-            })}
+                  <MoreHorizontal className="h-4 w-4" />
+                </button>
+              </Tip>
+              <Popover
+                open={viewMenuOpen}
+                onClose={() => setViewMenu(false)}
+                anchorRef={viewMenuRef}
+                placement="bottom-end"
+                className="global-sidebar-nested-layer w-56 py-1"
+              >
+                <MenuItem
+                  icon={sessionView === 'all' ? <Check className="h-3.5 w-3.5" /> : <LayoutGrid className="h-3.5 w-3.5" />}
+                  label={t('globalSidebar.allSessions')}
+                  active={sessionView === 'all'}
+                  onClick={() => { onSetSessionView('all'); setViewMenu(false); }}
+                />
+                <MenuItem
+                  icon={sessionView === 'favorites' ? <Check className="h-3.5 w-3.5" /> : <Star className="h-3.5 w-3.5" />}
+                  label={t('globalSidebar.favoriteSessions')}
+                  active={sessionView === 'favorites'}
+                  onClick={() => { onSetSessionView('favorites'); setViewMenu(false); }}
+                />
+                <MenuItem
+                  icon={showAutomationSessions ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                  label={showAutomationSessions
+                    ? t('globalSidebar.hideAutomationHistory')
+                    : t('globalSidebar.showAutomationHistory')}
+                  onClick={() => { onToggleAutomation(); setViewMenu(false); }}
+                />
+              </Popover>
+              <AddWorkspaceMenu
+                variant="icon"
+                onAddFolder={onAddFolder}
+                onCreateFromTemplate={onCreateFromTemplate}
+                onOpenChange={(open) => onNestedInteractionChange('add-workspace', open)}
+              />
+            </div>
+            {agentProjects.length === 0 && archivedProjects.length === 0 ? (
+              <div className="px-3 pb-4 pt-1 text-center">
+                <p className="text-sm font-medium text-[var(--ink)]">{tLauncher('rightRail.emptyWorkspaceTitle')}</p>
+                <p className="mt-1 text-xs text-[var(--ink-muted)]">{tLauncher('rightRail.emptyWorkspaceDescription')}</p>
+              </div>
+            ) : agentProjects.map((project, index) => renderWorkspaceEntry(project, index))}
 
             {archivedProjects.length > 0 && (
               <div className="pt-2">

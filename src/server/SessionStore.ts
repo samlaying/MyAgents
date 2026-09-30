@@ -54,7 +54,11 @@ import { elapsedMs, emitPerfTrace, nowMs } from './utils/perf-trace';
 import { normalizeSessionRuntimeIdentity, resolveBuiltinSdkSessionId } from './utils/session-runtime-identity';
 import { resolveLastVisibleTurnPreview } from './utils/session-message-preview';
 
-const MYAGENTS_DIR = join(homedir(), '.myagents');
+// Keep the Sidecar's session authority aligned with the desktop app's data
+// directory override. Tauri reads the same sessions.json for workspace
+// history; writing here to homedir unconditionally makes new sessions appear
+// in the tab but disappear from the isolated client's sidebar.
+const MYAGENTS_DIR = process.env.MYAGENTS_DATA_DIR || join(homedir(), '.myagents');
 const SESSIONS_FILE = join(MYAGENTS_DIR, 'sessions.json');
 const SESSIONS_DIR = join(MYAGENTS_DIR, 'sessions');
 const SESSIONS_V2_DIR = join(MYAGENTS_DIR, 'sessions-v2');

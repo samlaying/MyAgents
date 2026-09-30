@@ -2332,18 +2332,17 @@ describe('App helper launch', () => {
     mocks.resolveBuiltinSelection.mockReturnValue(managed
       ? { provider: managedCodexProvider(), model: 'gpt-5.5' }
       : undefined);
-    const title = 'A long learning card title that should fit in a tab';
     const prompt = 'Ask me one question at a time about user friction.';
 
     render(<App />);
     act(() => {
       window.dispatchEvent(new CustomEvent(CUSTOM_EVENTS.OPEN_AI_DISCUSSION, {
-        detail: { content: prompt, learningMode: true, chatTitle: title },
+        detail: { content: prompt, learningMode: true, chatTitle: 'A different card title' },
       }));
     });
 
     await waitFor(() => expect(latestTabbarProps().tabs).toEqual(expect.arrayContaining([
-      expect.objectContaining({ view: 'chat', title: `${title.slice(0, 20)}...` }),
+      expect.objectContaining({ view: 'chat', title: `${prompt.slice(0, 20)}...` }),
     ])));
     expect(tauriCoreMocks.invoke).not.toHaveBeenCalledWith('cmd_task_prepare_discussion', expect.anything());
     expect(mocks.chatProps).toEqual(expect.arrayContaining([

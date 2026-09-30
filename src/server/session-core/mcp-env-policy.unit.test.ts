@@ -70,4 +70,36 @@ describe('mcp-env-policy', () => {
     expect(env.NO_PROXY).toBe(MCP_LOCALHOST_NO_PROXY_VAL);
     expect(env.no_proxy).toBe(MCP_LOCALHOST_NO_PROXY_VAL);
   });
+
+  it('enables NODE_USE_ENV_PROXY so Node children actually use the forwarded proxy', () => {
+    const uppercase = buildMcpSubprocessEnv({
+      HTTPS_PROXY: 'http://proxy.local:7890',
+    }, undefined);
+    const lowercase = buildMcpSubprocessEnv({
+      https_proxy: 'http://proxy.local:7890',
+    }, undefined);
+
+    expect(uppercase.NODE_USE_ENV_PROXY).toBe('1');
+    expect(lowercase.NODE_USE_ENV_PROXY).toBe('1');
+  });
+
+  it('leaves NODE_USE_ENV_PROXY unset when no outbound proxy is forwarded', () => {
+    const env = buildMcpSubprocessEnv({
+      NO_PROXY: 'example.test',
+    }, {
+      TAVILY_API_KEY_1: 'key',
+    });
+
+    expect(env.NODE_USE_ENV_PROXY).toBeUndefined();
+  });
+
+  it('lets an explicit per-server NODE_USE_ENV_PROXY override the injected default', () => {
+    const env = buildMcpSubprocessEnv({
+      HTTPS_PROXY: 'http://proxy.local:7890',
+    }, {
+      NODE_USE_ENV_PROXY: '0',
+    });
+
+    expect(env.NODE_USE_ENV_PROXY).toBe('0');
+  });
 });
