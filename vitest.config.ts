@@ -20,7 +20,7 @@ const alias = [
 //                 Target: < 5s, run on every save (`npm run test:unit`).
 //  - `integration`: credential-free stateful server tests. May touch module
 //                 globals, loopback ports, scratch HOME, or SessionStore, but
-//                 MUST NOT talk to real upstream network. Runs singleFork serial.
+//                 MUST NOT talk to real upstream network. Runs one worker serially.
 //  - `credentialed`: real SDK/provider/network smoke. Explicit only; not part
 //                 of default npm test or public CI.
 //
@@ -71,7 +71,7 @@ export default defineConfig({
           testTimeout: 10_000,
           hookTimeout: 10_000,
           pool: 'forks',
-          // parallel (vitest default) — no singleFork
+          // Parallel (Vitest default).
         },
       },
       {
@@ -85,7 +85,9 @@ export default defineConfig({
           testTimeout: 120_000,
           hookTimeout: 120_000,
           pool: 'forks',
-          poolOptions: { forks: { singleFork: true } },
+          maxWorkers: 1,
+          isolate: false,
+          fileParallelism: false,
         },
       },
       {
@@ -98,7 +100,9 @@ export default defineConfig({
           testTimeout: 120_000,
           hookTimeout: 120_000,
           pool: 'forks',
-          poolOptions: { forks: { singleFork: true } },
+          maxWorkers: 1,
+          isolate: false,
+          fileParallelism: false,
         },
       },
       {

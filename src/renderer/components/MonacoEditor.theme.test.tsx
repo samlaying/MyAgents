@@ -23,11 +23,11 @@ vi.mock('@monaco-editor/react', () => ({
     return <div data-testid="monaco-editor" data-theme={theme} />;
   },
 }));
-vi.mock('monaco-editor/esm/vs/editor/editor.worker?worker', () => ({ default: class {} }));
-vi.mock('monaco-editor/esm/vs/language/json/json.worker?worker', () => ({ default: class {} }));
-vi.mock('monaco-editor/esm/vs/language/css/css.worker?worker', () => ({ default: class {} }));
-vi.mock('monaco-editor/esm/vs/language/html/html.worker?worker', () => ({ default: class {} }));
-vi.mock('monaco-editor/esm/vs/language/typescript/ts.worker?worker', () => ({ default: class {} }));
+vi.mock('monaco-editor/editor/editor.worker.js?worker', () => ({ default: class {} }));
+vi.mock('monaco-editor/language/json/json.worker.js?worker', () => ({ default: class {} }));
+vi.mock('monaco-editor/language/css/css.worker.js?worker', () => ({ default: class {} }));
+vi.mock('monaco-editor/language/html/html.worker.js?worker', () => ({ default: class {} }));
+vi.mock('monaco-editor/language/typescript/ts.worker.js?worker', () => ({ default: class {} }));
 
 import MonacoEditor from './MonacoEditor';
 

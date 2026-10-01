@@ -33,7 +33,7 @@ function press(opts: Record<string, unknown>): { sent: boolean; prevented: boole
 }
 
 describe('useChatComposerKeydown', () => {
-  let onSend: ReturnType<typeof vi.fn>;
+  let onSend: ReturnType<typeof vi.fn<() => void>>;
   beforeEach(() => {
     onSend = vi.fn();
     state.pref = 'enter';

@@ -14,7 +14,7 @@ import { usePanelKeys } from './task-center/editors/PanelChrome';
 
 const imeEvents = [{ isComposing: true, keyCode: 13 }, { isComposing: false, keyCode: 229 }];
 
-const inputCases: Array<{ name: string; view: (commit: ReturnType<typeof vi.fn>) => ReactNode; expected: unknown[] }> = [
+const inputCases: Array<{ name: string; view: (commit: ReturnType<typeof vi.fn<(...args: unknown[]) => Promise<void>>>) => ReactNode; expected: unknown[] }> = [
   { name: 'Session rename', view: commit => <SessionRenameDialog currentTitle="Old" onConfirm={commit} onCancel={vi.fn()} />, expected: ['ceshi'] },
   { name: 'workspace path', view: commit => <PathInputDialog isOpen folderName="Docs" defaultPath="/tmp" onConfirm={commit} onCancel={vi.fn()} />, expected: ['ceshi'] },
   { name: 'whitelist addition', view: commit => <WhitelistManager users={[]} onChange={commit} />, expected: [['ceshi']] },
@@ -24,7 +24,7 @@ const inputCases: Array<{ name: string; view: (commit: ReturnType<typeof vi.fn>)
 
 describe.each(imeEvents)('text-input actions respect IME %j', ime => {
   it.each(inputCases)('$name commits only on a later deliberate Enter', async ({ view, expected, name }) => {
-    const commit = vi.fn(async () => undefined);
+    const commit = vi.fn<(...args: unknown[]) => Promise<void>>(async () => undefined);
     const { container } = render(view(commit));
     if (name === 'token field') fireEvent.click(container.querySelector('button')!);
     const input = screen.getByRole('textbox');

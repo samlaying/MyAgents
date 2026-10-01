@@ -48,8 +48,12 @@ export function validateTsxRuntime(root, os, cpu) {
 }
 
 export function validateSharpRuntime(root, os, cpu) {
-  const native = join(root, `node_modules/@img/sharp-${os}-${cpu}/lib/sharp-${os}-${cpu}.node`);
-  if (!existsSync(native)) throw new Error(`Missing sharp-${os}-${cpu}.node`);
+  // Sharp 0.35 versions the native filename; derive it from the staged package
+  // so validation follows the locked native dependency rather than a version table.
+  const nativeRoot = join(root, `node_modules/@img/sharp-${os}-${cpu}`);
+  const { version } = JSON.parse(readFileSync(join(nativeRoot, 'package.json'), 'utf8'));
+  const native = join(nativeRoot, `lib/sharp-${os}-${cpu}-${version}.node`);
+  if (!existsSync(native)) throw new Error(`Missing sharp-${os}-${cpu}-${version}.node`);
   const libraries = runtimeFiles(join(root, 'node_modules')).filter(path => NATIVE_LIBRARY.test(path));
   for (const path of libraries) validateRuntimeBinary(path, os, cpu);
   if (!libraries.some(path => /(?:libvips|libvips-cpp).*(?:\.dylib|\.so|\.dll)/.test(path))) throw new Error('Missing sharp libvips library');

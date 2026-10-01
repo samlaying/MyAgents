@@ -208,24 +208,24 @@ export function getBundledRuntimePath(): string {
 }
 
 /**
- * Get the absolute path to the bundled sharp module's CommonJS entry (`lib/index.js`).
+ * Get the absolute path to the bundled sharp module's CommonJS entry (`dist/index.cjs`).
  *
  * sharp ships per-platform native addons (`@img/sharp-<triple>/sharp.node`) that
  * esbuild cannot bundle, so we install sharp into a dedicated `sharp-runtime/`
  * node_modules tree and load it at runtime via absolute-path dynamic import.
- * Sharp's internal `require('./libvips')` and `require('@img/sharp-<triple>/sharp.node')`
+ * Sharp's internal relative and native addon requires
  * both resolve correctly because Node walks up from the loaded entry file to
  * find `sharp-runtime/node_modules/`.
  *
  * Search order:
- * 1. Production (macOS):   Contents/Resources/sharp-runtime/node_modules/sharp/lib/index.js
- * 2. Production (Windows): <install-dir>/sharp-runtime/node_modules/sharp/lib/index.js
- * 3. Development:          <project-root>/node_modules/sharp/lib/index.js  (top-level dep)
+ * 1. Production (macOS):   Contents/Resources/sharp-runtime/node_modules/sharp/dist/index.cjs
+ * 2. Production (Windows): <install-dir>/sharp-runtime/node_modules/sharp/dist/index.cjs
+ * 3. Development:          <project-root>/node_modules/sharp/dist/index.cjs  (top-level dep)
  *
- * @returns Absolute path to sharp's lib/index.js, or null if not found.
+ * @returns Absolute path to sharp's dist/index.cjs, or null if not found.
  */
 export function getBundledSharpEntryPoint(): string | null {
-  const relBundled = join('sharp-runtime', 'node_modules', 'sharp', 'lib', 'index.js');
+  const relBundled = join('sharp-runtime', 'node_modules', 'sharp', 'dist', 'index.cjs');
   const scriptDir = getScriptDir();
 
   // Production layout: sharp-runtime is alongside server-dist.js in Resources
@@ -234,7 +234,7 @@ export function getBundledSharpEntryPoint(): string | null {
 
   // Development: use the top-level node_modules install from `npm install sharp`.
   // Walk up from scriptDir to project root.
-  const relDev = join('node_modules', 'sharp', 'lib', 'index.js');
+  const relDev = join('node_modules', 'sharp', 'dist', 'index.cjs');
   let dir = scriptDir;
   for (let i = 0; i < 6; i++) {
     const devPath = resolve(dir, relDev);

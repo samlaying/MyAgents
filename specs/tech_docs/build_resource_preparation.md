@@ -51,6 +51,8 @@ Linux 的 setup 通过 `build_linux.sh --install-deps` 和 `--prepare` 复用资
 
 保留 tsx 的 exact pin 和 JSON require 回归检查；移除 watch-only 的 fsevents，拒绝意外原生库。sharp 的 native 包版本来自锁定的依赖关系，所有 release 平台均走同一准备入口，平台签名仍由平台脚本负责。
 
+sharp 0.35 使用 `dist/index.cjs` 作为 Sidecar 的 CommonJS 加载入口，native 文件名也包含版本；验证从打包副本的 native package.json 读取版本。安全升级必须同时更新依赖锁、加载入口与资源验证。`tsx` 的 `esbuild` 定向锁为 0.27.2，避开 0.27.3–0.28.0 的 Windows 开发服务文件读取漏洞，同时保留现有 tsx JSON loader 行为。Monaco 内置 DOMPurify 定向升级到 3.4.16，覆盖编辑器尚未更新的精确依赖。
+
 ## 日志与成本
 
 准备日志使用 `HIT`（校验后复用）、`MISS`（指纹变化/缺失/损坏，需要准备）、`STAGED`（复制到本次打包目录）与 `WAIT`（等待资源锁）。已有 Node 下载器保留带版本/架构原因的 `[nodejs]` 日志；文档、语音与 CLIProxy 同样标记缓存结果。Cuse 在判断本地资源前仍会联网检查当前发布清单，`CHECK` 不等于下载完整资源。
