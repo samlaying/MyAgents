@@ -1,0 +1,96 @@
+.learning-card {
+  --learning-card-color: var(--accent-warm);
+  --learning-card-tint: var(--accent-warm-subtle);
+}
+
+.learning-card[data-course='english'] {
+  --learning-card-color: var(--learning-english, var(--accent-cool));
+  --learning-card-tint: var(--learning-english-bg, var(--hover-bg));
+}
+
+.learning-card[data-course='business'] {
+  --learning-card-color: var(--learning-business, var(--accent-warm));
+  --learning-card-tint: var(--learning-business-bg, var(--accent-warm-subtle));
+}
+
+.learning-card[data-course='product'] {
+  --learning-card-color: var(--learning-product, var(--ink-secondary));
+  --learning-card-tint: var(--learning-product-bg, var(--hover-bg));
+}
+
+.learning-card-header {
+  border-top-color: var(--learning-card-color);
+  background: var(--learning-card-tint);
+}
+
+.learning-card-badge,
+.learning-card-exercise {
+  background: var(--learning-card-tint);
+}
+
+.learning-card-badge,
+.learning-card-section-title {
+  color: var(--learning-card-color);
+}
+
+.learning-card :is(button, a):focus-visible {
+  outline: 2px solid var(--focus-border);
+  outline-offset: 3px;
+}
+
+/* Learning-only prose also applies to follow-up replies outside a card. */
+.learning-prose {
+  --learning-card-color: var(--accent-warm);
+  --learning-card-tint: var(--accent-warm-subtle);
+}
+
+.learning-card .learning-prose {
+  --learning-card-color: inherit;
+  --learning-card-tint: inherit;
+}
+
+.learning-prose .learning-emphasis {
+  color: var(--learning-card-color);
+  background: var(--learning-card-tint);
+  border-radius: var(--theme-radius-base);
+  padding-inline: 0.2em;
+  font-weight: 600;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.learning-prose .learning-callout {
+  margin-block: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--learning-card-color);
+  border-radius: var(--theme-radius-md);
+  background: var(--learning-card-tint);
+  color: var(--ink);
+}
+
+.learning-callout .learning-callout-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--learning-card-color);
+}
+
+.learning-callout > :last-child { margin-bottom: 0; }
+.learning-prose .learning-callout--example { background: var(--paper-inset); }
+.learning-prose .learning-callout--compare { background: var(--paper-elevated); }
+.learning-prose .learning-callout--compare :is(th, td):nth-child(odd) {
+  background: var(--learning-english-bg, var(--hover-bg));
+}
+.learning-prose .learning-callout--compare :is(th, td):nth-child(even) {
+  background: var(--learning-product-bg, var(--accent-warm-subtle));
+}
+.learning-prose .learning-callout--compare th:nth-child(odd) {
+  color: var(--learning-english, var(--accent-cool));
+}
+.learning-prose .learning-callout--compare th:nth-child(even) {
+  color: var(--learning-product, var(--accent-warm));
+}

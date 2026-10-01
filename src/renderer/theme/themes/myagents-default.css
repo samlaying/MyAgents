@@ -76,6 +76,15 @@ html[data-theme-id='myagents-default'][data-color-scheme='light'] {
   --on-warning: #1c1612;
   --info: #4a7ab5;
   --info-bg: #e4ecf4;
+
+  /* Course identity colors, independent of success / warning / info status.
+     Shared root defaults; optional Theme packages may override these roles. */
+  --learning-english: #275c9d;
+  --learning-english-bg: rgb(39 92 157 / 0.10);
+  --learning-business: #8b5724;
+  --learning-business-bg: rgb(139 87 36 / 0.10);
+  --learning-product: #7050a0;
+  --learning-product-bg: rgb(112 80 160 / 0.10);
   --on-info: #000000;
 
   --button-primary-bg: #c26d3a;
@@ -205,6 +214,15 @@ html[data-theme-id='myagents-default'][data-color-scheme='dark'] {
   --on-warning: #1a1614;
   --info: #6b9fd4;
   --info-bg: rgba(107, 159, 212, 0.15);
+
+  /* Course identity colors, independent of success / warning / info status.
+     Shared root defaults; optional Theme packages may override these roles. */
+  --learning-english: #8bb7ef;
+  --learning-english-bg: rgb(139 183 239 / 0.12);
+  --learning-business: #e7b47d;
+  --learning-business-bg: rgb(231 180 125 / 0.12);
+  --learning-product: #c1a3ec;
+  --learning-product-bg: rgb(193 163 236 / 0.12);
   --on-info: #1a1614;
 
   --button-primary-bg: #b05e2d;

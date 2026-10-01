@@ -13,10 +13,11 @@
 | 事实 | 权威来源 / owner | 说明 |
 |---|---|---|
 | 学习卡片、主题、来源、测验、错题、复盘、当前学习状态 | 当前学习工作区中的文件 | Agent 与 UI 均通过工作区文件服务访问；不在 localStorage 或 AppConfig 另存一份内容副本 |
-| 工作区路径、项目身份、是否为学习工作区、模板来源标记 | AppConfig 项目记录 | 这是应用目录索引与选择信息，不是学习内容 |
+| 工作区路径、项目身份、是否为学习工作区、模板来源标记、当前选中的学习工作区 ID | AppConfig | 这是应用目录索引与选择信息，不是学习内容；当前学习文件仍以该 ID 对应的本地路径为准 |
 | 定时任务定义、触发状态与执行记录 | Rust TaskStore | 任务执行可读写工作区文件，但任务元数据不属于工作区文件 |
 | 对话 Session 元数据与 transcript | SessionStore | 可记录关联的 workspace path；不复制学习文件内容作为 Session 权威 |
 | UI 当前选择、展开、筛选、临时编辑状态 | Renderer 临时状态 | 可丢弃、可重建；不得覆盖文件中的学习内容 |
+| Task Center 中最近创建的每日任务引用 | localStorage 的路径到 Task ID 映射 | 仅用于 UI 导航提示；任务内容、执行状态与 workspace path 仍以 TaskStore 为准 |
 | 工作区文件搜索索引、文件树缓存、watcher 变更提示 | Rust / Renderer projection | 可从文件重建，不拥有原始内容；重建或延迟不得改变文件 |
 
 新事实若不属于上述类别，落地前先确定具体 owner、scope 和 lifecycle，不以“学习系统”作为一个笼统数据库。
@@ -32,6 +33,7 @@ learning-workspace/
 ├── .gitignore
 ├── .claude/
 │   └── rules/
+│       ├── 00-WORKSPACE-CONTRACT.md
 │       ├── 01-IDENTITY.md
 │       ├── 02-SOUL.md
 │       ├── 03-USER.md
@@ -79,6 +81,8 @@ Agent 不负责创建/删除工作区骨架目录。目录结构由模板创建�
 
 ## 5. UI 投影与写回
 
+卡片生成、后续练习、持久化边界与尚未实现的记录协议，见 [学习卡片生命周期](./learning_card_lifecycle.md)。其中区分了当前实现与尚未实现的自动保障。
+
 ### 5.1 文件读取
 
 学习面板以 AppConfig 中选定的学习工作区路径为根，读取 `cards/` 下符合命名和 Frontmatter 约定的 Markdown 文件，再将可识别字段解析成卡片列表。排序、筛选、列表数量上限和卡片展示均为 projection，不形成第二份内容权威。文件变更通过 workspace watcher 触发刷新；搜索索引同样是可重建投影。
@@ -93,7 +97,7 @@ UI 标记“已学 / 有用 / 跳过”时，只修改卡片 Frontmatter 的 `st
 
 ### 5.3 当前工作区选择
 
-AppConfig 的项目记录负责标记学习工作区。Task Center、学习面板和学习任务必须绑定同一个明确的 workspace path。v1 产品行为是一个当前活动的学习工作区；若配置发现多个学习工作区，UI 应明确选择或提示用户消歧，不能静默取列表中的第一个。被归档的项目是否仍参与定时执行由任务绑定的 workspace path 决定，而不是 UI 列表是否可见。
+AppConfig 的项目记录负责标记学习工作区，`activeLearningWorkspaceId` 负责选择当前工作区。只有一个学习工作区时可兼容性地默认使用它；存在多个时必须由用户明确选择，不能静默取列表中的第一个。Task Center、学习讨论和新建学习任务必须绑定该选择对应的 workspace path。已创建任务继续使用其 TaskStore 中固定的 workspace path，切换当前学习工作区不应重定向旧任务。被归档的项目是否仍参与定时执行由任务绑定的 workspace path 决定，而不是 UI 列表是否可见。
 
 ## 6. 新建、接入与升级策略
 
@@ -106,8 +110,13 @@ AppConfig 的项目记录负责标记学习工作区。Task Center、学习面�
 ### 接入已有目录
 
 - 接入是显式用户动作。应用可以补齐标准目录和缺失的学习规则文件，但任何已存在的文件字节都视为用户内容，绝不覆盖。
+- 在写入或登记项目前，UI 必须展示所选路径和变更预览，用户确认后才执行；取消或预检失败时不写文件、不改变 AppConfig。
+- 预览说明将新增的目录 / 规则文件数量，以及会保留的已有目录 / 文件数量。路径已登记为其它工作区时，明确说明确认后会复用该项目并改归学习区。
+- 预检发现目标路径不是普通目录、标准目录路径被文件 / symlink 占用、规则文件路径被目录 / symlink 占用时，整次接入停止，不能先写入无冲突部分。
+- 预览后目标发生变化时再次校验；新目录路径若在确认前被占用则停止创建。目录或规则文件以“不存在才创建”的方式加入，不能覆盖并发写入的用户文件。
 - 接入不得用通用模板的样例卡、个人目标或示例资料填充已有目录；也不应把用户已有文件移动或重命名。
-- 若目录已有自己的 `CLAUDE.md` / `AGENTS.md`，接入不得覆盖它。学习专属约定应以新增的、可识别的学习规则文件加入，并在 Runtime 指令加载策略中确保被读取。当前实现只补齐 `CLAUDE.md` 与 `.claude/rules/01..04` 的缺失项；对已有根指令文件的组合加载需验证，属于实现验收项。
+- 若目录已有自己的 `CLAUDE.md` / `AGENTS.md` / `GEMINI.md`，接入不得覆盖或额外写入另一份根级指令。学习专属约定以 `.claude/rules/00-WORKSPACE-CONTRACT.md` 等独立规则文件加入，依靠 Runtime 现有兼容加载层读取。
+- 文件系统根目录、用户主目录和 MyAgents 数据目录本身不能作为学习工作区；symlink 根路径和模板资源目录也不能作为接入目标。
 
 ### 后续版本升级
 
@@ -127,11 +136,13 @@ AppConfig 的项目记录负责标记学习工作区。Task Center、学习面�
 | 项目 | 当前实现 | 与本稿的关系 |
 |---|---|---|
 | 新建模板 | `cmd_create_workspace_from_bundled_template` 完整复制只读资源目录；目录复制跳过 `.git`、`node_modules` 和 symlink | 符合完整复制方向；模板文件必须进入 Git 和打包资源 |
-| 接入已有目录 | `cmd_seed_learning_workspace` 添加约定的缺失目录与缺失文件，不覆盖已存在路径；不复制样例卡 | 符合保留用户文件原则；需确认已有根级指令与新增学习规则能被目标 Runtime 同时加载 |
+| 接入已有目录 | UI 先调用 `cmd_preview_learning_workspace_seed` 显示路径、变更数量与保留数量；用户确认后才调用 merge-only seed 并登记项目。冲突预检失败不写入 | 符合明确接入、保留用户文件原则；规则加载通过 Runtime workspace instruction adapter |
 | 模板升级 | 没有自动同步既有用户目录的路径 | 符合不静默覆盖；以后升级动作必须按显式预览策略设计 |
-| 卡片读取 | Task Center 从工作区 `cards/` 读 Markdown 并解析 Frontmatter | 与文件作为内容事实源一致 |
+| 卡片读取 | 学习工作区 Chat 在生成卡片的回复下，按本轮已完成文件编辑或明确文件引用读取 `cards/` 中的实际 Markdown；Task Center 保留卡片汇总 | 学习主路径在当前对话完成，无需返回任务 Tab；普通 Agent Chat 不显示学习控件 |
+| 对话内练习 | 卡片的「开始练习」通过当前 Chat 的既有发送入口，携带文件路径和引导问题继续当前 Session | 不创建新的讨论 Session，不切换工作区，不创建任务 |
 | 卡片 UI 写回 | 仅 patch `status` / `feedback`，使用 `expectedContent` | 与 UI 受限写权限一致 |
-| 工作区选择 | 当前 hook 取第一个学习工作区项目 | 与多工作区消歧要求不一致；应在允许多个学习工作区前补明确选择行为 |
+| 工作区选择 | AppConfig 保存 `activeLearningWorkspaceId`；仅有一个时兼容默认使用，多个时由学习页面要求明确选择 | 学习讨论和新建学习任务绑定当前选择的 workspace path；旧任务保持 TaskStore 中已有路径 |
+| 最近每日任务提示 | localStorage 按 workspace path 保存 TaskStore task ID，Task Center 读取任务状态 | 仅作为界面引用，不持有任务事实 |
 | 最近修改 | watcher 在当前面板记录最多少量近期 Markdown 路径 | 这是临时提示，不是持久审计记录 |
 
 ## 9. 验收标准
@@ -146,4 +157,4 @@ AppConfig 的项目记录负责标记学习工作区。Task Center、学习面�
 
 ## 10. 落地顺序
 
-先确认本稿的 owner 和升级原则；随后修正模板自身与规则加载的差距，再补齐多学习工作区选择和相应的最小回归验证。除非某条验收标准确实要求，不增加数据库、云端同步或持久变更时间线。
+后续按验收标准检查新建/接入工作区在各 Runtime 下是否实际加载规则，并维护模板示例与文件 schema 的一致性。除非某条验收标准确实要求，不增加数据库、云端同步或持久变更时间线。

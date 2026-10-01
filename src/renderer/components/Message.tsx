@@ -6,13 +6,14 @@ import { useTranslation } from 'react-i18next';
 import { track } from '@/analytics';
 import AttachmentPreviewList from '@/components/AttachmentPreviewList';
 import BlockGroup from '@/components/BlockGroup';
-import Markdown from '@/components/Markdown';
+import Markdown from '@/components/learning/LearningMarkdown';
 import { useToastOptional } from '@/components/Toast';
 import WidgetRenderer from '@/components/tools/WidgetRenderer';
 import { parseWidgetTags, hasWidgetTags } from '@/components/tools/widgetTagParser';
 import Tip from '@/components/Tip';
 import ToolAttachmentGallery from '@/components/tools/ToolAttachmentGallery';
 import { TurnFileEditSummary } from '@/components/TurnFileEditSummary';
+import LearningTurnCards from '@/components/learning/LearningTurnCards';
 import { useNotifyRowLayoutChanged } from '@/context/ChatRowLayoutContext';
 import { buildReplyMarkdown, downloadMarkdown, localDateStr } from '@/utils/markdownExport';
 import { formatDuration, formatTokens } from '@/utils/formatTokens';
@@ -500,13 +501,14 @@ const Message = memo(function Message({ message, isLoading = false, onRewind, on
             /* ai-message-content 标记 host prose 上下文；具体 16px/1.625、零字距和
                各语义块节奏由 Markdown 默认变体统一拥有。三个 assistant 分支
                （string/blocks/widget-segment）与文档预览共用这一条路径。 */
-            <div className="ai-message-content text-[var(--ink)] select-text">
+            <LearningTurnCards content={message.content} isLoading={isLoading} fallback={<div className="ai-message-content text-[var(--ink)] select-text">
               {/* Tail-fade only while text is the actively-streaming edge — `streamingTextActive`
                   clears on the text block's content-block-stop, so it doesn't linger during a
                   slow gap before the next block (string-content path). */}
               <Markdown streaming={isLoading && !!message.streamingTextActive}>{message.content}</Markdown>
-            </div>
+            </div>} />
           )}
+          {!isLoading && hasWidgets && <LearningTurnCards content={message.content} />}
           {!isLoading && <AssistantActions message={message} onRetry={onRetry} onFork={onFork} />}
         </div>
       </div>
@@ -514,6 +516,10 @@ const Message = memo(function Message({ message, isLoading = false, onRewind, on
   }
 
   const groupedBlocks = groupContentBlocksForDisplay(message.content);
+  const finalBlock = groupedBlocks.at(-1);
+  const cardTextIndex = finalBlock && !Array.isArray(finalBlock) && finalBlock.type === 'text'
+    && finalBlock.text && !finalBlock.asyncQuestions && !hasWidgetTags(finalBlock.text)
+    ? groupedBlocks.length - 1 : -1;
 
   // Determine which BlockGroup is the latest active section
   // Find the last BlockGroup index
@@ -581,9 +587,11 @@ const Message = memo(function Message({ message, isLoading = false, onRewind, on
                       key={index}
                       className="flex justify-start w-full px-1 py-1 select-none"
                     >
-                      <div className="ai-message-content w-full max-w-none text-[var(--ink)] select-text">
+                      {!isLoading && index === cardTextIndex ? <LearningTurnCards content={message.content} fallback={<div className="ai-message-content w-full max-w-none text-[var(--ink)] select-text">
+                        <Markdown>{item.text}</Markdown>
+                      </div>} /> : <div className="ai-message-content w-full max-w-none text-[var(--ink)] select-text">
                         <Markdown streaming={isLoading && index === groupedBlocks.length - 1 && !!message.streamingTextActive}>{item.text}</Markdown>
-                      </div>
+                      </div>}
                     </div>
                   );
                 }
@@ -628,6 +636,7 @@ const Message = memo(function Message({ message, isLoading = false, onRewind, on
             })}
           </div>
         </article>
+        {!isLoading && cardTextIndex === -1 && <div className="px-4"><LearningTurnCards content={message.content} /></div>}
         {!isLoading && <AssistantActions className="px-4" message={message} onRetry={onRetry} onFork={onFork} />}
       </div>
     </div>

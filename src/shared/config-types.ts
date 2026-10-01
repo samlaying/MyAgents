@@ -904,6 +904,9 @@ export function normalizeClaudeTranscriptCleanupPeriodDays(
 }
 
 export interface AppConfig {
+  /** Explicitly selected learning workspace when multiple learning projects exist.
+   *  The workspace's files remain the authority for learning content. */
+  activeLearningWorkspaceId?: string;
   // Default settings for new projects
   defaultProviderId?: string;
   defaultPermissionMode: PermissionMode;

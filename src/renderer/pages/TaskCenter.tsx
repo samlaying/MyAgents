@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BookOpen, Check, CircleCheck, MessageCircle, ThumbsDown, ThumbsUp } from 'lucide-react';
+import CustomSelect, { type SelectOption } from '@/components/CustomSelect';
 import { ThoughtPanel } from '@/components/task-center/ThoughtPanel';
 import { TaskListPanel } from '@/components/task-center/TaskListPanel';
 import RecordingSourceDialog from '@/components/task-center/RecordingSourceDialog';
@@ -30,6 +31,39 @@ import type {
   RecordingSnapshot,
   RecordingSourceSelection,
 } from '@/../shared/types/record';
+import { workspacePathsEqual } from '@/../shared/workspacePath';
+
+const LEARNING_DAILY_TASK_REF_KEY = 'myagents.learning.dailyTaskId.v1';
+
+function readLearningDailyTaskId(workspacePath: string | null): string {
+  try {
+    const raw = localStorage.getItem(LEARNING_DAILY_TASK_REF_KEY);
+    if (!raw) return '';
+    try {
+      const parsed = JSON.parse(raw) as {
+        byWorkspace?: Record<string, unknown>;
+        id?: unknown;
+        workspacePath?: unknown;
+      };
+      if (parsed.byWorkspace && typeof parsed.byWorkspace === 'object') {
+        const match = Object.entries(parsed.byWorkspace).find(([path]) =>
+          workspacePath && workspacePathsEqual(path, workspacePath),
+        );
+        return typeof match?.[1] === 'string' ? match[1] : '';
+      }
+      if (typeof parsed.id === 'string' && typeof parsed.workspacePath === 'string') {
+        return workspacePath && workspacePathsEqual(parsed.workspacePath, workspacePath)
+          ? parsed.id
+          : '';
+      }
+    } catch {
+      // Older releases stored only the TaskStore ID. Verify its workspace below.
+    }
+    return raw;
+  } catch {
+    return '';
+  }
+}
 
 interface Props {
   isActive?: boolean;
@@ -76,7 +110,13 @@ export default function TaskCenter({
   // Learning data lives in the learning workspace (system preset). The agent
   // owns card content; the UI owns only status/feedback frontmatter fields
   // and writes them through CAS saveFile (see learningWorkspace.ts).
-  const { path: learningWorkspacePath } = useLearningWorkspace();
+  const {
+    path: learningWorkspacePath,
+    projects: learningWorkspaces = [],
+    project: learningWorkspace,
+    requiresSelection: learningWorkspaceRequiresSelection = false,
+    select: selectLearningWorkspace = async () => {},
+  } = useLearningWorkspace();
   const {
     cards: learningCards,
     loading: learningLoading,
@@ -84,7 +124,21 @@ export default function TaskCenter({
     refresh: refreshLearningCards,
     fileService: learningFileService,
   } = useLearningCards(learningWorkspacePath, isActive ?? false);
-  const [uiPatches, setUiPatches] = useState<Record<string, { status?: 'new' | 'learned'; feedback?: 'useful' | 'skip' | null }>>({});
+  type CardUiPatch = { status?: 'new' | 'learned'; feedback?: 'useful' | 'skip' | null };
+  const [uiPatchSnapshot, setUiPatchSnapshot] = useState<{
+    workspacePath: string | null;
+    patches: Record<string, CardUiPatch>;
+  }>(() => ({ workspacePath: learningWorkspacePath, patches: {} }));
+  const uiPatches = useMemo(
+    () => uiPatchSnapshot.workspacePath === learningWorkspacePath ? uiPatchSnapshot.patches : {},
+    [learningWorkspacePath, uiPatchSnapshot],
+  );
+  const setUiPatches = useCallback((update: (previous: Record<string, CardUiPatch>) => Record<string, CardUiPatch>) => {
+    setUiPatchSnapshot((previous) => ({
+      workspacePath: learningWorkspacePath,
+      patches: update(previous.workspacePath === learningWorkspacePath ? previous.patches : {}),
+    }));
+  }, [learningWorkspacePath]);
   const [importingSources, setImportingSources] = useState(false);
   const [sourceImportError, setSourceImportError] = useState<string | null>(null);
   const [learningSyncError, setLearningSyncError] = useState<string | null>(null);
@@ -101,7 +155,7 @@ export default function TaskCenter({
     [recentChanges],
   );
   const [dailyPushTaskId, setDailyPushTaskId] = useState(() => {
-    try { return localStorage.getItem('myagents.learning.dailyTaskId.v1') ?? ''; } catch { return ''; }
+    return readLearningDailyTaskId(learningWorkspacePath);
   });
   const sourceFolderInputRef = useRef<HTMLInputElement>(null);
   // Learning state moved into the learning workspace files; sweep the three
@@ -113,22 +167,44 @@ export default function TaskCenter({
     }
   }, []);
   useEffect(() => {
+    setDailyPushTaskId(readLearningDailyTaskId(learningWorkspacePath));
+  }, [learningWorkspacePath]);
+  useEffect(() => {
     const handleCreated = () => {
-      try { setDailyPushTaskId(localStorage.getItem('myagents.learning.dailyTaskId.v1') ?? ''); } catch { /* The Task Center still owns the scheduled task. */ }
+      setDailyPushTaskId(readLearningDailyTaskId(learningWorkspacePath));
     };
     window.addEventListener(CUSTOM_EVENTS.LEARNING_DAILY_TASK_CREATED, handleCreated);
     return () => window.removeEventListener(CUSTOM_EVENTS.LEARNING_DAILY_TASK_CREATED, handleCreated);
-  }, []);
+  }, [learningWorkspacePath]);
   useEffect(() => {
     if (!dailyPushTaskId) return;
     let cancelled = false;
     void taskGet(dailyPushTaskId)
       .then((task) => {
         const activeStatuses = ['todo', 'running', 'verifying', 'blocked'];
+        if (!cancelled && task?.workspacePath && learningWorkspacePath && !workspacePathsEqual(task.workspacePath, learningWorkspacePath)) {
+          setDailyPushTaskId((current) => current === dailyPushTaskId ? '' : current);
+          return;
+        }
         if (cancelled || (task?.executionMode === 'recurring' && !task.deleted && activeStatuses.includes(task.status))) return;
         try {
-          if (localStorage.getItem('myagents.learning.dailyTaskId.v1') === dailyPushTaskId) {
-            localStorage.removeItem('myagents.learning.dailyTaskId.v1');
+          const raw = localStorage.getItem(LEARNING_DAILY_TASK_REF_KEY);
+          let removeWholeReference = raw === dailyPushTaskId;
+          try {
+            const parsed = JSON.parse(raw ?? '') as {
+              byWorkspace?: Record<string, unknown>;
+              id?: unknown;
+            };
+            if (parsed.id === dailyPushTaskId) removeWholeReference = true;
+            if (parsed.byWorkspace) {
+              const next = Object.fromEntries(Object.entries(parsed.byWorkspace)
+                .filter(([, id]) => id !== dailyPushTaskId));
+              if (Object.keys(next).length === 0) removeWholeReference = true;
+              else localStorage.setItem(LEARNING_DAILY_TASK_REF_KEY, JSON.stringify({ byWorkspace: next }));
+            }
+          } catch { /* Backward-compatible legacy raw task ID. */ }
+          if (removeWholeReference) {
+            localStorage.removeItem(LEARNING_DAILY_TASK_REF_KEY);
           }
         } catch { /* Keep the current view usable when local storage is unavailable. */ }
         setDailyPushTaskId((current) => current === dailyPushTaskId ? '' : current);
@@ -137,10 +213,17 @@ export default function TaskCenter({
         console.warn('[TaskCenter] Failed to verify daily learning task:', error);
       });
     return () => { cancelled = true; };
-  }, [activePanel, dailyPushTaskId, isActive]);
+  }, [activePanel, dailyPushTaskId, isActive, learningWorkspacePath]);
   const lessons = useMemo(
     () => learningCards.map((card) => (uiPatches[card.filePath] ? { ...card, ...uiPatches[card.filePath] } : card)),
     [learningCards, uiPatches],
+  );
+  const learningWorkspaceOptions = useMemo<SelectOption[]>(
+    () => learningWorkspaces.map((workspace) => ({
+      value: workspace.id,
+      label: workspace.displayName || workspace.name,
+    })),
+    [learningWorkspaces],
   );
   const completedCount = lessons.filter((lesson) => lesson.status === 'learned').length;
 
@@ -212,7 +295,7 @@ export default function TaskCenter({
       setLearningSyncError(error instanceof Error ? error.message : String(error));
       console.warn('[TaskCenter] Failed to persist learning card patch:', error);
     }
-  }, [learningFileService, refreshLearningCards]);
+  }, [learningFileService, refreshLearningCards, setUiPatches]);
 
   const toggleLessonComplete = useCallback((lesson: WorkspaceLearningCard) => {
     void writeCardPatch(lesson, { status: lesson.status === 'learned' ? 'new' : 'learned' });
@@ -235,9 +318,9 @@ export default function TaskCenter({
   const discussLesson = useCallback((lesson: WorkspaceLearningCard) => {
     const content = lesson.prompt || `请带我学习「${lesson.title}」：先问我一个问题，根据我的回答继续追问，最后检查我是否理解。`;
     window.dispatchEvent(new CustomEvent(CUSTOM_EVENTS.OPEN_AI_DISCUSSION, {
-      detail: { content, learningMode: true },
+      detail: { content, workspaceId: learningWorkspace?.id, learningMode: true },
     }));
-  }, []);
+  }, [learningWorkspace?.id]);
   const scheduleDailyLearning = useCallback(() => {
     if (!learningWorkspacePath) return;
     // Thin prompt: the workspace CLAUDE.md contract carries the card
@@ -485,8 +568,24 @@ export default function TaskCenter({
         !learningWorkspacePath ? (
           <div className="flex min-h-0 flex-1 items-center justify-center px-8">
             <div className="max-w-md text-center">
-              <p className="text-sm text-[var(--ink-secondary)]">{t('learning.workspaceMissing')}</p>
-              <button type="button" onClick={() => { void handleRecreateLearningWorkspace(); }} className="mt-4 rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--on-accent)]">{t('learning.workspaceMissingAction')}</button>
+              {learningWorkspaceRequiresSelection ? <>
+                <p className="text-sm text-[var(--ink-secondary)]">{t('learning.chooseWorkspace')}</p>
+                <label className="mt-4 flex flex-col gap-2 text-left text-sm text-[var(--ink-muted)]">
+                  <span>{t('learning.workspaceLabel')}</span>
+                  <CustomSelect
+                    value=""
+                    options={learningWorkspaceOptions}
+                    onChange={(projectId) => { void selectLearningWorkspace(projectId); }}
+                    placeholder={t('learning.chooseWorkspaceOption')}
+                    ariaLabel={t('learning.workspaceLabel')}
+                    size="md"
+                    className="min-w-64"
+                  />
+                </label>
+              </> : <>
+                <p className="text-sm text-[var(--ink-secondary)]">{t('learning.workspaceMissing')}</p>
+                <button type="button" onClick={() => { void handleRecreateLearningWorkspace(); }} className="mt-4 rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--on-accent)]">{t('learning.workspaceMissingAction')}</button>
+              </>}
             </div>
           </div>
         ) : (
@@ -494,7 +593,22 @@ export default function TaskCenter({
           <div className="mx-auto max-w-4xl">
             <section className="mb-5 rounded-2xl border border-[var(--line)] bg-[var(--paper-elevated)] p-5">
               <div className="flex items-start justify-between gap-4">
-                <div><p className="text-sm text-[var(--ink-muted)]">{t('learning.dailyTagline')}</p><h2 className="mt-1 text-lg font-semibold text-[var(--ink)]">{t('learning.dailyTitle')}</h2><p className="mt-1 text-sm text-[var(--ink-muted)]">{t('learning.progress', { completed: completedCount, total: lessons.length })}</p></div>
+                <div>
+                  <p className="text-sm text-[var(--ink-muted)]">{t('learning.dailyTagline')}</p>
+                  <h2 className="mt-1 text-lg font-semibold text-[var(--ink)]">{t('learning.dailyTitle')}</h2>
+                  <p className="mt-1 text-sm text-[var(--ink-muted)]">{t('learning.progress', { completed: completedCount, total: lessons.length })}</p>
+                  {learningWorkspaces.length > 1 && <label className="mt-3 flex flex-wrap items-center gap-2 text-sm text-[var(--ink-muted)]">
+                    <span>{t('learning.workspaceLabel')}</span>
+                    <CustomSelect
+                      value={learningWorkspace?.id ?? ''}
+                      options={learningWorkspaceOptions}
+                      onChange={(projectId) => { void selectLearningWorkspace(projectId); }}
+                      ariaLabel={t('learning.workspaceLabel')}
+                      size="toolbar"
+                      className="max-w-xs"
+                    />
+                  </label>}
+                </div>
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]"><BookOpen className="h-5 w-5" /></div>
               </div>
               <div className="mt-4 h-2 overflow-hidden rounded-full bg-[var(--paper-inset)]"><div className="h-full rounded-full bg-[var(--accent)] transition-all" style={{ width: `${lessons.length ? (completedCount / lessons.length) * 100 : 0}%` }} /></div>

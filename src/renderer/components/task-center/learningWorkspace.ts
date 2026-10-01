@@ -5,7 +5,7 @@
 // saveFile({ expectedContent }) CAS so a concurrent agent rewrite cannot be
 // blindly clobbered.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useConfig } from '@/hooks/useConfig';
 import { useWorkspaceChangeSignal } from '@/hooks/useWorkspaceChangeSignal';
@@ -150,18 +150,41 @@ export function encodeTextBase64(text: string): string {
   return btoa(binary);
 }
 
-/** Resolve the panel's learning workspace: the first learning-template
- *  project. Deliberately NOT filtered by visibility/archive state — an
- *  archived workspace still has a valid path for file IO and the scheduled
- *  daily task. (ponytail: first-match; a picker is needed when users rely on
- *  multiple learning workspaces simultaneously.) */
-export function useLearningWorkspace(): { project: Project | null; path: string | null } {
-  const { projects } = useConfig();
-  const project = useMemo(
-    () => projects.find(isLearningWorkspaceProject) ?? null,
+/** Resolve the active workspace by its app-owned project ID. A single existing
+ *  learning workspace remains the implicit choice for backward compatibility;
+ *  multiple workspaces require explicit selection. */
+export function useLearningWorkspace(): {
+  project: Project | null;
+  path: string | null;
+  projects: Project[];
+  requiresSelection: boolean;
+  select: (projectId: string) => Promise<void>;
+} {
+  const { projects, config, updateConfig } = useConfig();
+  const learningProjects = useMemo(
+    () => projects.filter(isLearningWorkspaceProject),
     [projects],
   );
-  return { project, path: project?.path ?? null };
+  const project = useMemo(() => {
+    const selected = learningProjects.find((candidate) => candidate.id === config.activeLearningWorkspaceId);
+    if (selected) return selected;
+    return learningProjects.length === 1 ? learningProjects[0] : null;
+  }, [config.activeLearningWorkspaceId, learningProjects]);
+  const select = useCallback(async (projectId: string) => {
+    if (!learningProjects.some((candidate) => candidate.id === projectId)) return;
+    try {
+      await updateConfig({ activeLearningWorkspaceId: projectId });
+    } catch (error) {
+      console.warn('[learningWorkspace] Failed to save active workspace selection:', error);
+    }
+  }, [learningProjects, updateConfig]);
+  return {
+    project,
+    path: project?.path ?? null,
+    projects: learningProjects,
+    requiresSelection: learningProjects.length > 1 && !project,
+    select,
+  };
 }
 
 /** Local mirror of the tree node shape from useWorkspaceFileService (its
@@ -196,7 +219,9 @@ export function useLearningRecentChanges(
   workspacePath: string | null,
   isActive: boolean,
 ): string[] {
-  const [paths, setPaths] = useState<string[]>([]);
+  const [snapshot, setSnapshot] = useState<{ workspacePath: string | null; paths: string[] }>(
+    () => ({ workspacePath, paths: [] }),
+  );
   useWorkspaceChangeSignal(
     workspacePath,
     isActive,
@@ -204,13 +229,17 @@ export function useLearningRecentChanges(
     useCallback((changed: string[]) => {
       const markdown = changed.filter((path) => path.toLowerCase().endsWith('.md'));
       if (markdown.length === 0) return;
-      setPaths((prev) => {
-        const merged = [...markdown.slice().reverse(), ...prev];
-        return [...new Set(merged)].slice(0, LEARNING_RECENT_CHANGES_LIMIT);
+      setSnapshot((previous) => {
+        const previousPaths = previous.workspacePath === workspacePath ? previous.paths : [];
+        const merged = [...markdown.slice().reverse(), ...previousPaths];
+        return {
+          workspacePath,
+          paths: [...new Set(merged)].slice(0, LEARNING_RECENT_CHANGES_LIMIT),
+        };
       });
-    }, []),
+    }, [workspacePath]),
   );
-  return paths;
+  return snapshot.workspacePath === workspacePath ? snapshot.paths : [];
 }
 
 /** List learning cards from `<learning workspace>/cards/`, refreshed on
@@ -221,19 +250,30 @@ export function useLearningCards(
 ): LearningCardsState {
   const fileService = useWorkspaceFileService(workspacePath);
   const changeSignal = useWorkspaceChangeSignal(workspacePath, isActive);
-  const [cards, setCards] = useState<WorkspaceLearningCard[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [snapshot, setSnapshot] = useState<{
+    workspacePath: string | null;
+    cards: WorkspaceLearningCard[];
+    loading: boolean;
+    error: string | null;
+  }>(() => ({ workspacePath, cards: [], loading: false, error: null }));
+  const requestGenerationRef = useRef(0);
 
   const refresh = useCallback(async () => {
+    const requestGeneration = ++requestGenerationRef.current;
     if (!workspacePath || !fileService.isAvailable) {
-      setCards([]);
+      setSnapshot({ workspacePath, cards: [], loading: false, error: null });
       return;
     }
-    setLoading(true);
-    setError(null);
     try {
       const tree = await fileService.dirTree();
+      if (requestGeneration === requestGenerationRef.current) {
+        setSnapshot((previous) => ({
+          workspacePath,
+          cards: previous.workspacePath === workspacePath ? previous.cards : [],
+          loading: true,
+          error: null,
+        }));
+      }
       const cardsNode = findDir(tree.tree as TreeLikeNode, 'cards');
       let children: TreeLikeNode[] = cardsNode?.children ?? [];
       if (cardsNode && cardsNode.loaded === false) {
@@ -254,19 +294,35 @@ export function useLearningCards(
           }
         }),
       );
-      setCards(parsed.filter((card): card is WorkspaceLearningCard => card !== null));
+      if (requestGeneration === requestGenerationRef.current) {
+        setSnapshot({
+          workspacePath,
+          cards: parsed.filter((card): card is WorkspaceLearningCard => card !== null),
+          loading: false,
+          error: null,
+        });
+      }
     } catch (err) {
-      console.warn('[learningWorkspace] Failed to list cards:', err);
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
+      if (requestGeneration === requestGenerationRef.current) {
+        console.warn('[learningWorkspace] Failed to list cards:', err);
+        setSnapshot({
+          workspacePath,
+          cards: [],
+          loading: false,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
   }, [fileService, workspacePath]);
 
   useEffect(() => {
-    if (!isActive) return;
-    void refresh();
-  }, [isActive, refresh, changeSignal]);
+    if (!isActive || !workspacePath || !fileService.isAvailable) return;
+    const timer = window.setTimeout(() => { void refresh(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [changeSignal, fileService.isAvailable, isActive, refresh, workspacePath]);
 
-  return { cards, loading, error, refresh, fileService };
+  const current = snapshot.workspacePath === workspacePath
+    ? snapshot
+    : { workspacePath, cards: [], loading: Boolean(workspacePath && isActive), error: null };
+  return { ...current, refresh, fileService };
 }

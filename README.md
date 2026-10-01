@@ -180,6 +180,8 @@ setup 脚本会先按当前 target 和已验证缓存检查原生推理构建工
 
 #### macOS 学习版客户端
 
+学习版开发分支为 `dev-learning`（Git 分支名不能包含空格）。编译前先执行 `git switch dev-learning`，确认使用学习版代码。
+
 需要在 macOS 上单独编译并打开包含「学习」模块的桌面客户端时，使用独立的 bundle 标识和应用名称，避免和普通版混淆。以下命令会从当前检出的代码构建资源，并把 Rust 桌面层与 Node Sidecar 的会话数据统一放在 `~/.myagents-learning-dev/`：
 
 ```bash

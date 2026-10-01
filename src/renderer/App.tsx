@@ -186,6 +186,7 @@ import {
 import {
   CODEX_SUBSCRIPTION_PROVIDER_ID,
   getManagedCodexProviderReadiness,
+  isLearningWorkspaceProject,
 } from '../shared/config-types';
 import { workspacePathsEqual } from '../shared/workspacePath';
 import { resolveDiscussionWorkspace } from '../shared/discussionWorkspace';
@@ -3880,11 +3881,13 @@ export default function App() {
         }
 
         const projects = configProjectsRef.current.filter(
-          isProjectVisibleToUser,
+          (project) => isProjectVisibleToUser(project)
+            || (learningMode && isLearningWorkspaceProject(project)),
         );
         const workspace = resolveDiscussionWorkspace(projects, {
           workspaceId,
           learningMode,
+          activeLearningWorkspaceId: configRef.current?.activeLearningWorkspaceId,
         });
         if (!workspace) {
           toastRef.current?.error(t('appChrome.noWorkspaceForDiscussion'));
@@ -4881,7 +4884,26 @@ export default function App() {
                   has_workspace: !!created.workspacePath,
                 });
                 if (taskCreateIntent.learningDailyPush) {
-                  try { localStorage.setItem('myagents.learning.dailyTaskId.v1', created.id); } catch { /* The scheduled task remains durable in TaskStore. */ }
+                  try {
+                    const storageKey = 'myagents.learning.dailyTaskId.v1';
+                    const raw = localStorage.getItem(storageKey);
+                    let byWorkspace: Record<string, string> = {};
+                    try {
+                      const parsed = JSON.parse(raw ?? '') as {
+                        byWorkspace?: Record<string, unknown>;
+                        id?: unknown;
+                        workspacePath?: unknown;
+                      };
+                      if (parsed.byWorkspace && typeof parsed.byWorkspace === 'object') {
+                        byWorkspace = Object.fromEntries(Object.entries(parsed.byWorkspace)
+                          .filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
+                      } else if (typeof parsed.id === 'string' && typeof parsed.workspacePath === 'string') {
+                        byWorkspace[parsed.workspacePath] = parsed.id;
+                      }
+                    } catch { /* Replace the pre-migration single-ID pointer below. */ }
+                    if (created.workspacePath) byWorkspace[created.workspacePath] = created.id;
+                    localStorage.setItem(storageKey, JSON.stringify({ byWorkspace }));
+                  } catch { /* The scheduled task remains durable in TaskStore. */ }
                   window.dispatchEvent(new CustomEvent(CUSTOM_EVENTS.LEARNING_DAILY_TASK_CREATED));
                 }
                 setTaskCreateIntent(null);

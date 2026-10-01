@@ -42,7 +42,15 @@
     "loadMore": "Show more",
     "learningSection": "Learning",
     "agentWorkspaceSection": "Agent Workspaces",
-    "learningEmptyHint": "No learning workspaces yet — use + above to add a folder or create from template"
+    "learningEmptyHint": "No learning workspaces yet — use + above to add a folder or create from template",
+    "learningWorkspaceConfirmTitle": "Confirm learning workspace",
+    "learningWorkspaceCreateConfirm": "A new learning workspace will be created from the built-in template:\n{{path}}\n\nNothing is created before confirmation. If this path becomes occupied before confirmation completes, the operation will stop without overwriting existing content.",
+    "learningWorkspaceAdoptConfirm": "This folder will be added to Learning:\n{{path}}\n\n{{addDirectories}} folders and {{addFiles}} template rule files will be added. Its {{preserveDirectories}} existing folders and {{preserveFiles}} existing files will be kept without overwriting.",
+    "learningWorkspaceAlreadyRegistered": "\n\nThis folder is already in your workspace list. Confirmation will reuse it and place it in Learning.",
+    "learningWorkspaceConfirmAction": "Confirm and continue",
+    "learningWorkspaceConflict": "No files were changed in {{path}}. These paths have type conflicts: {{paths}}",
+    "learningWorkspacePreviewFailed": "Could not inspect {{path}}: {{message}}",
+    "learningWorkspaceApplyFailed": "The learning workspace at {{path}} was not added: {{message}}"
   },
   "titlebar": {
     "helper": "AI Helper",

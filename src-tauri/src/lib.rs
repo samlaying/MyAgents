@@ -496,6 +496,8 @@ pub fn run() {
             // Bundled workspace initialization
             commands::cmd_initialize_bundled_workspace,
             commands::cmd_seed_learning_workspace,
+            commands::cmd_preview_learning_workspace_seed,
+            commands::cmd_create_learning_workspace,
             commands::cmd_create_bot_workspace,
             commands::cmd_remove_bot_workspace,
             // Agent Runtime detection (v0.1.59)

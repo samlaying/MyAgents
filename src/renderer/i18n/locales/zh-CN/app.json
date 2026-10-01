@@ -42,7 +42,15 @@
     "loadMore": "展开更多",
     "learningSection": "学习",
     "agentWorkspaceSection": "Agent 工作区",
-    "learningEmptyHint": "还没有学习工作区——点右上 + 添加本地文件夹或从模板创建"
+    "learningEmptyHint": "还没有学习工作区——点右上 + 添加本地文件夹或从模板创建",
+    "learningWorkspaceConfirmTitle": "确认添加学习工作区",
+    "learningWorkspaceCreateConfirm": "将创建新的学习工作区并复制内置模板：\n{{path}}\n\n确认前不会创建文件。确认后若该路径已被占用，将停止操作，不会覆盖已有内容。",
+    "learningWorkspaceAdoptConfirm": "将把此文件夹接入学习区：\n{{path}}\n\n将补齐 {{addDirectories}} 个目录和 {{addFiles}} 个模板规则文件；保留现有的 {{preserveDirectories}} 个目录和 {{preserveFiles}} 个文件，不覆盖已有内容。",
+    "learningWorkspaceAlreadyRegistered": "\n\n这个文件夹已在工作区列表中，确认后会复用并归入学习区。",
+    "learningWorkspaceConfirmAction": "确认并继续",
+    "learningWorkspaceConflict": "未修改文件夹 {{path}}。以下路径存在文件类型冲突：{{paths}}",
+    "learningWorkspacePreviewFailed": "无法检查学习工作区 {{path}}：{{message}}",
+    "learningWorkspaceApplyFailed": "学习工作区 {{path}} 未完成添加：{{message}}"
   },
   "titlebar": {
     "helper": "小助理",

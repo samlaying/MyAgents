@@ -295,6 +295,8 @@ const markdownComponents: Components = {
 
 interface MarkdownProps {
   children: string;
+  /** Presentation overrides only; file links and images retain their shared policy. */
+  presentationComponents?: Pick<Components, 'blockquote' | 'strong'>;
   /** Document-level numbering for an editor rendering isolated fragments. */
   footnoteNumbers?: ReadonlyMap<string, number>;
   /** Use compact styling for smaller spaces like thinking blocks */
@@ -431,7 +433,7 @@ const MarkdownImage = memo(MarkdownImageInner, (prev, next) =>
   && prev.alt === next.alt,
 );
 
-const Markdown = memo(function Markdown({ children, compact = false, preserveNewlines = false, raw = false, basePath = '', workspacePath, streaming = false, footnoteNumbers }: MarkdownProps) {
+const Markdown = memo(function Markdown({ children, compact = false, preserveNewlines = false, raw = false, basePath = '', workspacePath, streaming = false, footnoteNumbers, presentationComponents }: MarkdownProps) {
   // Skip preprocessing for raw mode (file preview) - preprocessing is for streaming chat messages.
   // In raw mode, convert YAML frontmatter to a fenced code block for proper rendering.
   //
@@ -453,6 +455,7 @@ const Markdown = memo(function Markdown({ children, compact = false, preserveNew
   const components = useMemo(() => {
     return {
       ...markdownComponents,
+      ...presentationComponents,
       img: (props: React.ImgHTMLAttributes<HTMLImageElement>) => (
         <MarkdownImage src={props.src} alt={props.alt} basePath={basePath} workspacePath={workspacePath} />
       ),
@@ -464,7 +467,7 @@ const Markdown = memo(function Markdown({ children, compact = false, preserveNew
         return <MarkdownLink {...props} basePath={basePath}>{number ?? props.children}</MarkdownLink>;
       },
     };
-  }, [basePath, workspacePath, footnoteNumbers]);
+  }, [basePath, workspacePath, footnoteNumbers, presentationComponents]);
 
   return (
     <MarkdownDocumentDirectoryContext.Provider value={basePath}>

@@ -27,6 +27,8 @@ import DirectoryPanel, { type DirectoryPanelHandle, type WorkspaceTreePersistedS
 import DropZoneOverlay from '@/components/DropZoneOverlay';
 import OverlayBackdrop from '@/components/OverlayBackdrop';
 import MessageList from '@/components/MessageList';
+import { LearningChatContext } from '@/context/learningChatState';
+import { isLearningWorkspaceProject } from '../../shared/config-types';
 import SessionHistoryDropdown from '@/components/SessionHistoryDropdown';
 import SessionSurfaceTags from '@/components/SessionSurfaceTags';
 import SessionMenuButton, { type BotChannelCandidate } from '@/components/SessionMenuButton';
@@ -3943,6 +3945,18 @@ export default function Chat({ registerFileEditSubmitter, windowPresentation, on
   const handleSendMessageRef = useRef(handleSendMessage);
   handleSendMessageRef.current = handleSendMessage;
 
+  const discussLearningCard = useCallback((text: string) => handleSendMessageRef.current(text), []);
+  const learningChatWorkspacePath = isLearningWorkspaceProject(currentProject) ? agentDir : null;
+  const learningChatState = useMemo(() => learningChatWorkspacePath ? {
+    workspacePath: learningChatWorkspacePath,
+    sessionId: sessionId || undefined,
+    fileService,
+    isActive,
+    isBusy: isLoading || isSessionLoading,
+    changeSignal: workspaceChangeSignal,
+    discuss: discussLearningCard,
+  } : null, [learningChatWorkspacePath, sessionId, fileService, isActive, isLoading, isSessionLoading, workspaceChangeSignal, discussLearningCard]);
+
   const questionActions = useMemo<AsyncQuestionActions>(() => ({
     answered: [...historyMessages, ...messages].flatMap(message => message.role === 'user' && message.asyncQuestionReply ? [message.asyncQuestionReply] : []),
     queued: queuedMessages.flatMap(message => message.asyncQuestionReply ? [message.asyncQuestionReply] : []),
@@ -5076,6 +5090,7 @@ export default function Chat({ registerFileEditSubmitter, windowPresentation, on
             Explicit UI refreshes remain a second controlled source.
           */}
           <AsyncQuestionContext.Provider value={questionActions}>
+          <LearningChatContext.Provider value={learningChatState}>
           <FileActionProvider
             previewHandleRef={actionFilePreviewRef}
             workspacePath={agentDir}
@@ -6173,6 +6188,7 @@ export default function Chat({ registerFileEditSubmitter, windowPresentation, on
       )}
     </div>
           </FileActionProvider>
+          </LearningChatContext.Provider>
           </AsyncQuestionContext.Provider>
           </BrowserPanelContext.Provider>
   );

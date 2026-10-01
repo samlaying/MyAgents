@@ -439,6 +439,16 @@ export default memo(function GlobalSidebar({
   // Carries the caller's adopt options (learning vs plain) through the
   // browser-dev path-name dialog to handlePathConfirm.
   const [pendingAddOptions, setPendingAddOptions] = useState<AddProjectOptions | undefined>(undefined);
+  const [learningSeedPreview, setLearningSeedPreview] = useState<{
+    path: string;
+    createFromTemplate: boolean;
+    filesToAdd: string[];
+    directoriesToAdd: string[];
+    filesPreserved: string[];
+    directoriesPreserved: string[];
+  } | null>(null);
+  const [learningSeedBusy, setLearningSeedBusy] = useState(false);
+  const learningSeedInFlightRef = useRef(false);
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [projectToRemove, setProjectToRemove] = useState<Project | null>(null);
   const [agentWorkspacePath, setAgentWorkspacePath] = useState<string | null>(null);
@@ -448,6 +458,7 @@ export default memo(function GlobalSidebar({
   const archiveInFlightRef = useRef(new Set<string>());
   const childLayerOpen = pathDialogOpen
     || templateDialogOpen
+    || learningSeedPreview !== null
     || projectToRemove !== null
     || agentWorkspacePath !== null
     || pendingDeleteSession !== null
@@ -734,21 +745,67 @@ export default memo(function GlobalSidebar({
     }));
   }, []);
 
-  // Adopting a folder into 学习 upgrades it in place: the learning contract
-  // (CLAUDE.md + rules + directory skeleton) is seeded, merge-only — the
-  // user's own files are never touched. Seed cards stay exclusive to
-  // template-created workspaces.
-  const maybeSeedLearningWorkspace = useCallback(async (path: string, options?: AddProjectOptions) => {
-    if (options?.templateId !== LEARNING_BUNDLED_WORKSPACE_TEMPLATE_ID) return;
+  const previewLearningWorkspace = useCallback(async (path: string) => {
+    const cleanPath = path.trim();
+    if (!cleanPath) return;
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      await invoke('cmd_seed_learning_workspace', { target: path });
+      let preview: {
+        createFromTemplate: boolean;
+        filesToAdd: string[];
+        directoriesToAdd: string[];
+        filesPreserved: string[];
+        directoriesPreserved: string[];
+        conflicts?: string[];
+      };
+      if (isBrowserDevMode()) {
+        preview = {
+          createFromTemplate: true, filesToAdd: [], directoriesToAdd: [],
+          filesPreserved: [], directoriesPreserved: [], conflicts: [],
+        };
+      } else {
+        const { invoke } = await import('@tauri-apps/api/core');
+        preview = await invoke('cmd_preview_learning_workspace_seed', { target: cleanPath });
+      }
+      if (preview.conflicts?.length) {
+        throw new Error(t('globalSidebar.learningWorkspaceConflict', { path: cleanPath, paths: preview.conflicts.join('、') }));
+      }
+      setLearningSeedPreview({ path: cleanPath, ...preview });
     } catch (error) {
-      // Seeding is best-effort on top of the user's own folder — a failure
-      // must not block adoption, the workspace still registers.
-      console.warn('[GlobalSidebar] Learning workspace seeding skipped:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      toastRef.current.error(t('globalSidebar.learningWorkspacePreviewFailed', { path: cleanPath, message }));
+      setPendingAddOptions(undefined);
     }
-  }, []);
+  }, [t]);
+
+  const confirmLearningWorkspace = useCallback(async () => {
+    const preview = learningSeedPreview;
+    if (!preview || learningSeedInFlightRef.current) return;
+    learningSeedInFlightRef.current = true;
+    setLearningSeedBusy(true);
+    try {
+      if (!isBrowserDevMode()) {
+        const { invoke } = await import('@tauri-apps/api/core');
+        if (preview.createFromTemplate) {
+          await invoke('cmd_create_learning_workspace', { destPath: preview.path });
+        } else {
+          await invoke('cmd_seed_learning_workspace', { target: preview.path });
+        }
+      }
+      await addProject(preview.path, pendingAddOptions);
+      const normalizedPath = preview.path.replace(/\\/g, '/');
+      const parentDir = normalizedPath.split('/').slice(0, -1).join('/');
+      if (parentDir) window.localStorage.setItem('myagents:lastProjectDir', parentDir);
+      setLearningSeedPreview(null);
+      setPendingAddOptions(undefined);
+      restoreChildLayerFocus();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      toastRef.current.error(t('globalSidebar.learningWorkspaceApplyFailed', { path: preview.path, message }));
+    } finally {
+      learningSeedInFlightRef.current = false;
+      setLearningSeedBusy(false);
+    }
+  }, [addProject, learningSeedPreview, pendingAddOptions, restoreChildLayerFocus, t]);
 
   const handleAddFolder = useCallback(async (options?: AddProjectOptions) => {
     try {
@@ -768,14 +825,19 @@ export default memo(function GlobalSidebar({
         title: tLauncher('dialogs.pickProjectFolder'),
       });
       if (typeof selected === 'string') {
-        await maybeSeedLearningWorkspace(selected, options);
-        await addProject(selected, options);
+        if (options?.templateId === LEARNING_BUNDLED_WORKSPACE_TEMPLATE_ID) {
+          setPendingAddOptions(options);
+          rememberChildLayerOrigin();
+          await previewLearningWorkspace(selected);
+        } else {
+          await addProject(selected, options);
+        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       toastRef.current.error(tLauncher('toasts.addProjectFailed', { message }));
     }
-  }, [addProject, maybeSeedLearningWorkspace, rememberChildLayerOrigin, tLauncher]);
+  }, [addProject, previewLearningWorkspace, rememberChildLayerOrigin, tLauncher]);
 
   const handleAddLearningFolder = useCallback(
     () => handleAddFolder({
@@ -790,8 +852,11 @@ export default memo(function GlobalSidebar({
 
   const handlePathConfirm = useCallback(async (path: string) => {
     setPathDialogOpen(false);
+    if (pendingAddOptions?.templateId === LEARNING_BUNDLED_WORKSPACE_TEMPLATE_ID) {
+      await previewLearningWorkspace(path);
+      return;
+    }
     try {
-      await maybeSeedLearningWorkspace(path, pendingAddOptions);
       await addProject(path, pendingAddOptions);
       const normalizedPath = path.replace(/\\/g, '/');
       const parentDir = normalizedPath.split('/').slice(0, -1).join('/');
@@ -803,7 +868,7 @@ export default memo(function GlobalSidebar({
       setPendingAddOptions(undefined);
       restoreChildLayerFocus();
     }
-  }, [addProject, maybeSeedLearningWorkspace, pendingAddOptions, restoreChildLayerFocus, tLauncher]);
+  }, [addProject, pendingAddOptions, previewLearningWorkspace, restoreChildLayerFocus, tLauncher]);
 
   const handleCreateFromTemplate = useCallback(async (
     path: string,
@@ -1416,9 +1481,36 @@ export default memo(function GlobalSidebar({
         onConfirm={handlePathConfirm}
         onCancel={() => {
           setPathDialogOpen(false);
+          setPendingAddOptions(undefined);
           restoreChildLayerFocus();
         }}
       />
+
+      {learningSeedPreview && (
+        <ConfirmDialog
+          title={t('globalSidebar.learningWorkspaceConfirmTitle')}
+          message={learningSeedPreview.createFromTemplate
+            ? t('globalSidebar.learningWorkspaceCreateConfirm', { path: learningSeedPreview.path })
+            : `${t('globalSidebar.learningWorkspaceAdoptConfirm', {
+              path: learningSeedPreview.path,
+              addFiles: learningSeedPreview.filesToAdd.length,
+              addDirectories: learningSeedPreview.directoriesToAdd.length,
+              preserveFiles: learningSeedPreview.filesPreserved.length,
+              preserveDirectories: learningSeedPreview.directoriesPreserved.length,
+            })}${projects.some((project) => workspacePathsEqual(project.path, learningSeedPreview.path))
+              ? t('globalSidebar.learningWorkspaceAlreadyRegistered') : ''}`}
+          confirmText={t('globalSidebar.learningWorkspaceConfirmAction')}
+          loading={learningSeedBusy}
+          disableEnterShortcut
+          onConfirm={confirmLearningWorkspace}
+          onCancel={() => {
+            if (learningSeedBusy) return;
+            setLearningSeedPreview(null);
+            setPendingAddOptions(undefined);
+            restoreChildLayerFocus();
+          }}
+        />
+      )}
 
       {templateDialogOpen && (
         <TemplateLibraryDialog

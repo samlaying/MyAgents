@@ -400,14 +400,13 @@ const BUNDLED_WORKSPACE_TEMPLATES_DIR: &str = "bundled-workspaces";
 const DEFAULT_BUNDLED_WORKSPACE_TEMPLATE_ID: &str = "mino";
 const LEARNING_BUNDLED_WORKSPACE_TEMPLATE_ID: &str = "learning";
 
-/// Contract layer seeded into an adopted local folder so it becomes a full
-/// learning workspace WITHOUT touching the user's own files: files are only
-/// copied when absent, directories only created when missing. Seed cards and
-/// the template .gitignore are deliberately excluded — adopted folders hold
-/// the user's own material; sample content belongs to template-created
-/// workspaces only.
+/// Learning rules seeded into an adopted local folder WITHOUT touching the
+/// user's root instructions or other files: files are only copied when absent,
+/// directories only created when missing. Seed cards and the template
+/// .gitignore are deliberately excluded — adopted folders hold the user's own
+/// material; sample content belongs to template-created workspaces only.
 const LEARNING_SEED_FILES: [&str; 5] = [
-    "CLAUDE.md",
+    ".claude/rules/00-WORKSPACE-CONTRACT.md",
     ".claude/rules/01-IDENTITY.md",
     ".claude/rules/02-SOUL.md",
     ".claude/rules/03-USER.md",
@@ -425,12 +424,162 @@ const LEARNING_SEED_DIRS: [&str; 9] = [
     "archive",
 ];
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LearningWorkspaceSeedPreview {
+    pub create_from_template: bool,
+    pub files_to_add: Vec<String>,
+    pub directories_to_add: Vec<String>,
+    pub files_preserved: Vec<String>,
+    pub directories_preserved: Vec<String>,
+    pub conflicts: Vec<String>,
+}
+
+fn resolve_learning_workspace_target(target: &Path) -> Result<PathBuf, String> {
+    let absolute_target = if target.is_absolute() {
+        target.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_err(|e| format!("无法读取当前目录：{}", e))?
+            .join(target)
+    };
+    let target = absolute_target.as_path();
+    let candidate = if target.exists() {
+        target.canonicalize().map_err(|e| format!("无法解析工作区路径：{}", e))?
+    } else {
+        let mut ancestor = target.parent().ok_or("工作区路径缺少父目录")?;
+        let mut suffix = vec![target.file_name().ok_or("工作区路径缺少文件夹名称")?.to_os_string()];
+        while !ancestor.exists() {
+            suffix.push(ancestor.file_name().ok_or("无法解析工作区父目录")?.to_os_string());
+            ancestor = ancestor.parent().ok_or("无法解析工作区父目录")?;
+        }
+        if !ancestor.is_dir() {
+            return Err(format!("工作区父路径不是文件夹：{}", ancestor.display()));
+        }
+        let mut resolved = ancestor.canonicalize().map_err(|e| format!("无法解析父目录：{}", e))?;
+        for component in suffix.iter().rev() { resolved.push(component); }
+        resolved
+    };
+    Ok(candidate)
+}
+
+fn validate_learning_workspace_target(target: &Path) -> Result<(), String> {
+    let candidate = resolve_learning_workspace_target(target)?;
+    if candidate.parent().is_none() {
+        return Err("不能将文件系统根目录设为学习工作区".to_string());
+    }
+    if let Some(home) = dirs::home_dir().and_then(|path| path.canonicalize().ok()) {
+        if candidate == home {
+            return Err("不能将用户主目录直接设为学习工作区".to_string());
+        }
+    }
+    if let Some(data_dir) = crate::app_dirs::myagents_data_dir().and_then(|path| path.canonicalize().ok()) {
+        if candidate == data_dir {
+            return Err("不能将 MyAgents 数据目录直接设为学习工作区".to_string());
+        }
+    }
+    Ok(())
+}
+
+fn preview_learning_workspace_seed(template: &Path, target: &Path) -> Result<LearningWorkspaceSeedPreview, String> {
+    if !template.is_dir() {
+        return Err(format!("Learning template not found: {:?}", template));
+    }
+    let metadata = match fs::symlink_metadata(target) {
+        Ok(metadata) => Some(metadata),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(format!("无法检查学习工作区路径 {:?}：{}", target, error)),
+    };
+    let Some(metadata) = metadata else {
+        return Ok(LearningWorkspaceSeedPreview {
+            create_from_template: true,
+            files_to_add: Vec::new(), directories_to_add: Vec::new(),
+            files_preserved: Vec::new(), directories_preserved: Vec::new(), conflicts: Vec::new(),
+        });
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(format!("学习工作区路径不是普通文件夹：{:?}", target));
+    }
+    let mut plan = LearningWorkspaceSeedPreview {
+        create_from_template: false,
+        files_to_add: Vec::new(), directories_to_add: Vec::new(),
+        files_preserved: Vec::new(), directories_preserved: Vec::new(), conflicts: Vec::new(),
+    };
+    let invalid_ancestor = |rel: &str| -> Result<Option<String>, String> {
+        let components = Path::new(rel).components().collect::<Vec<_>>();
+        let mut current = target.to_path_buf();
+        for component in components.iter().take(components.len().saturating_sub(1)) {
+            current.push(component.as_os_str());
+            match fs::symlink_metadata(&current) {
+                Ok(meta) if meta.file_type().is_symlink() || !meta.is_dir() => {
+                    return Ok(Some(current.strip_prefix(target).unwrap_or(&current).display().to_string()));
+                }
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+                Err(error) => return Err(format!("无法检查路径 {}：{}", current.display(), error)),
+            }
+        }
+        Ok(None)
+    };
+    for rel in LEARNING_SEED_DIRS {
+        if let Some(conflict) = invalid_ancestor(rel)? { plan.conflicts.push(conflict); continue; }
+        let path = target.join(rel);
+        match fs::symlink_metadata(&path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => plan.directories_to_add.push(rel.to_string()),
+            Err(error) => return Err(format!("无法检查目录 {}：{}", rel, error)),
+            Ok(meta) if meta.file_type().is_symlink() || !meta.is_dir() => plan.conflicts.push(rel.to_string()),
+            Ok(_) => plan.directories_preserved.push(rel.to_string()),
+        }
+    }
+    for rel in LEARNING_SEED_FILES {
+        if let Some(conflict) = invalid_ancestor(rel)? { plan.conflicts.push(conflict); continue; }
+        let path = target.join(rel);
+        match fs::symlink_metadata(&path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => plan.files_to_add.push(rel.to_string()),
+            Err(error) => return Err(format!("无法检查文件 {}：{}", rel, error)),
+            Ok(meta) if meta.file_type().is_symlink() || !meta.is_file() => plan.conflicts.push(rel.to_string()),
+            Ok(_) => plan.files_preserved.push(rel.to_string()),
+        }
+    }
+    plan.conflicts.sort();
+    plan.conflicts.dedup();
+    Ok(plan)
+}
+
+fn copy_file_without_overwrite(src: &Path, dest: &Path) -> Result<bool, String> {
+    let parent = dest.parent().ok_or_else(|| format!("Missing parent for {}", dest.display()))?;
+    let name = dest.file_name().ok_or_else(|| format!("Missing filename for {}", dest.display()))?;
+    let temp = parent.join(format!(".{}.{}.tmp", name.to_string_lossy(), uuid::Uuid::new_v4()));
+    let result = (|| {
+        let mut input = fs::File::open(src).map_err(|e| format!("Failed to open template: {}", e))?;
+        let mut output = fs::OpenOptions::new().write(true).create_new(true).open(&temp)
+            .map_err(|e| format!("Failed to create temporary seed file: {}", e))?;
+        std::io::copy(&mut input, &mut output).map_err(|e| format!("Failed to write temporary seed file: {}", e))?;
+        output.sync_all().map_err(|e| format!("Failed to flush temporary seed file: {}", e))?;
+        match fs::hard_link(&temp, dest) {
+            Ok(()) => Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                let metadata = fs::symlink_metadata(dest).map_err(|e| format!("Failed to inspect {}: {}", dest.display(), e))?;
+                if metadata.is_file() && !metadata.file_type().is_symlink() { Ok(false) }
+                else { Err(format!("Learning seed path conflict at {}", dest.display())) }
+            }
+            Err(error) => Err(format!("Failed to install seed file {}: {}", dest.display(), error)),
+        }
+    })();
+    let _ = fs::remove_file(&temp);
+    result
+}
+
 fn seed_learning_workspace_at(template: &Path, target: &Path) -> Result<(), String> {
     if !template.is_dir() {
         return Err(format!("Learning template not found: {:?}", template));
     }
     if !target.is_dir() {
         return Err(format!("Seed target is not a directory: {:?}", target));
+    }
+    let preview = preview_learning_workspace_seed(template, target)?;
+    if !preview.conflicts.is_empty() {
+        return Err(format!("学习工作区存在路径冲突，未写入文件：{}", preview.conflicts.join(", ")));
     }
     for rel in LEARNING_SEED_DIRS {
         let dir = target.join(rel);
@@ -440,17 +589,30 @@ fn seed_learning_workspace_at(template: &Path, target: &Path) -> Result<(), Stri
     }
     for rel in LEARNING_SEED_FILES {
         let dest = target.join(rel);
-        if dest.exists() {
-            continue; // never overwrite the user's own files
-        }
         let src = template.join(rel);
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent)
                 .map_err(|e| format!("Failed to create parent of {}: {}", rel, e))?;
         }
-        fs::copy(&src, &dest).map_err(|e| format!("Failed to seed {}: {}", rel, e))?;
+        copy_file_without_overwrite(&src, &dest).map_err(|e| format!("Failed to seed {}: {}", rel, e))?;
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn cmd_preview_learning_workspace_seed<R: Runtime>(
+    app_handle: AppHandle<R>, target: String,
+) -> Result<LearningWorkspaceSeedPreview, String> {
+    let target_dir = target.trim();
+    if target_dir.is_empty() { return Err("Seed target path is empty".to_string()); }
+    let template = resolve_bundled_workspace_template(&app_handle, LEARNING_BUNDLED_WORKSPACE_TEMPLATE_ID)?;
+    let target_path = std::path::PathBuf::from(target_dir);
+    validate_learning_workspace_target(&target_path)?;
+    let candidate = resolve_learning_workspace_target(&target_path)?;
+    if candidate == template || candidate.starts_with(&template) {
+        return Err("Refusing to seed into the bundled template source".to_string());
+    }
+    preview_learning_workspace_seed(&template, &target_path)
 }
 
 /// Command: Upgrade an adopted local folder into a full learning workspace.
@@ -468,12 +630,12 @@ pub fn cmd_seed_learning_workspace<R: Runtime>(
         return Err("Seed target path is empty".to_string());
     }
     let target_path = std::path::PathBuf::from(target_dir);
+    validate_learning_workspace_target(&target_path)?;
     // Refuse to seed into the immutable template source itself.
     let template = resolve_bundled_workspace_template(&app_handle, LEARNING_BUNDLED_WORKSPACE_TEMPLATE_ID)?;
-    if let Ok(canonical_target) = target_path.canonicalize() {
-        if canonical_target == template || canonical_target.starts_with(&template) {
-            return Err("Refusing to seed into the bundled template source".to_string());
-        }
+    let candidate = resolve_learning_workspace_target(&target_path)?;
+    if candidate == template || candidate.starts_with(&template) {
+        return Err("Refusing to seed into the bundled template source".to_string());
     }
     seed_learning_workspace_at(&template, &target_path)
 }
@@ -761,6 +923,68 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
         }
     }
     Ok(())
+}
+
+fn copy_dir_contents_new(src: &Path, dst: &Path) -> std::io::Result<()> {
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        if name == ".git" || name == "node_modules" { continue; }
+        let file_type = entry.file_type()?;
+        if file_type.is_symlink() { continue; }
+        let dest = dst.join(name);
+        if file_type.is_dir() {
+            fs::create_dir(&dest)?;
+            copy_dir_contents_new(&entry.path(), &dest)?;
+        } else {
+            let mut input = fs::File::open(entry.path())?;
+            let mut output = fs::OpenOptions::new().write(true).create_new(true).open(dest)?;
+            std::io::copy(&mut input, &mut output)?;
+        }
+    }
+    Ok(())
+}
+
+fn create_learning_workspace_from_template(template: &Path, dest: &Path) -> Result<(), String> {
+    if dest.exists() || fs::symlink_metadata(dest).is_ok() {
+        return Err(format!("Destination already exists: {}", dest.display()));
+    }
+    let parent = dest.parent().ok_or("Learning workspace destination has no parent")?;
+    let staging = parent.join(format!(".myagents-learning-{}.tmp", uuid::Uuid::new_v4()));
+    fs::create_dir(&staging).map_err(|e| format!("Failed to reserve staging directory: {}", e))?;
+    let result = copy_dir_contents_new(template, &staging)
+        .map_err(|e| format!("Failed to stage learning workspace: {}", e))
+        .and_then(|()| crate::durable_fs::rename_directory_noreplace(&staging, dest)
+            .map_err(|e| format!("Failed to install learning workspace without overwriting: {}", e)));
+    if staging.exists() {
+        let _ = fs::remove_dir_all(&staging);
+    }
+    result
+}
+
+#[tauri::command]
+pub fn cmd_create_learning_workspace<R: Runtime>(
+    app_handle: AppHandle<R>, dest_path: String,
+) -> Result<(), String> {
+    let trimmed_dest = dest_path.trim();
+    if trimmed_dest.is_empty() { return Err("Learning workspace path is empty".to_string()); }
+    let requested_dest = PathBuf::from(trimmed_dest);
+    let dest = if requested_dest.is_absolute() {
+        requested_dest
+    } else {
+        std::env::current_dir()
+            .map_err(|e| format!("Failed to read current directory: {}", e))?
+            .join(requested_dest)
+    };
+    validate_learning_workspace_target(&dest)?;
+    let candidate = resolve_learning_workspace_target(&dest)?;
+    let parent = dest.parent().ok_or("Learning workspace destination has no parent")?;
+    let template = resolve_bundled_workspace_template(&app_handle, LEARNING_BUNDLED_WORKSPACE_TEMPLATE_ID)?;
+    if candidate == template || candidate.starts_with(&template) {
+        return Err("Refusing to create a learning workspace inside the bundled template source".to_string());
+    }
+    fs::create_dir_all(parent).map_err(|e| format!("Failed to create parent dir: {}", e))?;
+    create_learning_workspace_from_template(&template, &dest)
 }
 
 // ============= Workspace Template Commands =============
@@ -1624,6 +1848,7 @@ fn merge_dir_recursive_validated_with_home(
 #[cfg(test)]
 mod bundled_workspace_template_tests {
     use super::{
+        create_learning_workspace_from_template, preview_learning_workspace_seed,
         resolve_bundled_workspace_template_at, seed_learning_workspace_at,
         BUNDLED_WORKSPACE_TEMPLATES_DIR, DEFAULT_BUNDLED_WORKSPACE_TEMPLATE_ID,
         LEARNING_BUNDLED_WORKSPACE_TEMPLATE_ID,
@@ -1693,6 +1918,46 @@ mod bundled_workspace_template_tests {
             std::fs::read_to_string(target.join("CLAUDE.md")).unwrap(),
             "user's own contract"
         );
+    }
+
+    #[test]
+    fn learning_seed_conflicts_are_detected_before_any_directory_is_added() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("src-tauri must live under the repository root");
+        let template = resolve_bundled_workspace_template_at(
+            repo_root,
+            LEARNING_BUNDLED_WORKSPACE_TEMPLATE_ID,
+        )
+        .expect("learning template must resolve");
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let target = tmp.path();
+        std::fs::write(target.join("inbox"), "user file").unwrap();
+
+        let preview = preview_learning_workspace_seed(&template, target).expect("preview");
+        assert_eq!(preview.conflicts, vec!["inbox"]);
+        assert!(seed_learning_workspace_at(&template, target).is_err());
+        assert_eq!(std::fs::read_to_string(target.join("inbox")).unwrap(), "user file");
+        assert_eq!(std::fs::read_dir(target).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn new_learning_workspace_install_is_atomic_and_never_replaces_a_destination() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let template = tmp.path().join("template");
+        std::fs::create_dir_all(template.join("cards")).unwrap();
+        std::fs::write(template.join("CLAUDE.md"), "template").unwrap();
+        std::fs::write(template.join("cards").join("sample.md"), "sample").unwrap();
+        let destination = tmp.path().join("learning");
+
+        create_learning_workspace_from_template(&template, &destination).expect("install template");
+        assert_eq!(std::fs::read_to_string(destination.join("CLAUDE.md")).unwrap(), "template");
+        assert_eq!(std::fs::read_to_string(destination.join("cards/sample.md")).unwrap(), "sample");
+
+        std::fs::write(destination.join("CLAUDE.md"), "user edit").unwrap();
+        assert!(create_learning_workspace_from_template(&template, &destination).is_err());
+        assert_eq!(std::fs::read_to_string(destination.join("CLAUDE.md")).unwrap(), "user edit");
+        assert_eq!(std::fs::read_dir(tmp.path()).unwrap().count(), 2);
     }
 
     #[test]

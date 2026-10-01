@@ -230,6 +230,10 @@ default + system，不能阻断窗口创建。
 | Prism | `adapters.prism` | CodeBlock、Mermaid code、Bash/FilePatch 派生同一 palette |
 | Widget | `adapters.widget` 的 scheme literal → `widget:theme` | 禁止 render 时读宿主 computed style；只 postMessage CSS，不替换 iframe/srcdoc/内容 |
 
+### 学习卡片课程色
+
+学习卡片使用可选的 `--learning-english / --learning-business / --learning-product` 与对应 `-bg` Token。默认 Theme 提供随明暗模式切换的 root 默认值，其它 Theme 可覆盖；课程色只表示课程身份，不复用 success / warning / info 状态色。卡片正文仍消费 ink / paper，颜色同时配合课程文字和图标，避免仅凭颜色区分。
+
 ## 7. Space 与非 Theme 内容
 
 Space 是全局 Theme 的标准 CSS host surface：组件直接消费 root semantic Token，Popover portal 也自然从 `<html>` 继承同一套值。不得为 Space 添加局部 Theme ID、独立 palette、Theme 映射表或逐字段 fallback。切换 Theme / scheme 时，Space 的 paper、文字、字体、圆角、阴影、动作色与 success/error/warning/info 状态组必须原子变化；布局、信息架构和业务状态机保持不变。
