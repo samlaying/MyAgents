@@ -37,7 +37,9 @@ learning-workspace/
 │       ├── 01-IDENTITY.md
 │       ├── 02-SOUL.md
 │       ├── 03-USER.md
-│       └── 04-LEARNING-STATE.md
+│       ├── 04-LEARNING-STATE.md
+│       └── 05-LEARNING-MEMORY.md       # 学习进度/记忆/Git 协议
+├── UPDATE_MEMORY.md                   # 官方记忆更新的学习专属要求
 ├── inbox/                 # 尚未处理的输入
 ├── sources/               # 已阅读或整理的原始资料
 ├── cards/                 # 学习卡片

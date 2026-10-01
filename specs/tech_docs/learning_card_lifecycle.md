@@ -133,6 +133,16 @@ UI读取assessments中命名符合约定的最近120个文件，将与当前卡�
 - 当前回复卡片定位：`src/renderer/utils/learningTurnCards.ts`
 - 实际练习请求：`src/renderer/i18n/locales/zh-CN/task.json` 的 `learning.practiceMessage`
 
+## 学习记忆与 Git 提示词
+
+`05-LEARNING-MEMORY.md` 是学习专属的进度、完成时间与 Git 协议；模板中的 `UPDATE_MEMORY.md` 将官方记忆更新导向该规则，`myagents-memory-update` 对契约明确的学习工作区按学习文件层级处理，不另建 Daily/Core。开始/收尾消息也显式要求读取该规则。新建和显式接入补齐缺失文件，保留已有同名文件；安装 App 不覆盖用户规则。
+
+- 出卡是待学，结束练习不等于用户确认学完，用户已学不等于有测验证据的掌握。
+- 明确确认/重新学习事件可写入 `assessments/YYYY-MM-DD-learning-<event-id>.md`（`type: learning-progress`），时间来源与精度必须可说明，重复执行复用同一事件。该类型目前是 Agent/用户可读的历史文件，练习 UI 只投影 `type: practice`，不会把它误显示成练习成绩。
+- UI 已学标记仍只写 `status/feedback`，不保存点击时间、不触发 Agent/Git。仅看到当前 learned 标记时，完成时间未知；本次发现时间、文件 mtime 与 commit 时间不冒充完成时间。没有确认或状态变化证据不造事件。
+- 相关产物明确收尾后由 Agent 检查 diff、提交本次文件，说明课程、真实进度、事件时间、未解决问题与下一步。远程/upstream 配置与学习工作区自动同步授权是推送前提；保存、提交、推送分别核实，失败不回滚学习产物。
+- 定时记忆更新沿用现有 TaskStore/SessionEngine 路径，仍需用户启用。此改动是提示词协议，不新增监听器、自动点击时间或 Git 事务保障，不自动配置 GitHub 仓库或启用后台任务。
+
 ## 9. 学习区内容呈现
 
 学习Chat使用共享Markdown的安全解析、链接和图片路径策略，仅覆写引用块/加粗的视觉组件。普通Agent Chat不启用该呈现；卡片与后续学习回复都可使用：

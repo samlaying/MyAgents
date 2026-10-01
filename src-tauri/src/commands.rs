@@ -405,12 +405,14 @@ const LEARNING_BUNDLED_WORKSPACE_TEMPLATE_ID: &str = "learning";
 /// directories only created when missing. Seed cards and the template
 /// .gitignore are deliberately excluded — adopted folders hold the user's own
 /// material; sample content belongs to template-created workspaces only.
-const LEARNING_SEED_FILES: [&str; 5] = [
+const LEARNING_SEED_FILES: [&str; 7] = [
     ".claude/rules/00-WORKSPACE-CONTRACT.md",
     ".claude/rules/01-IDENTITY.md",
     ".claude/rules/02-SOUL.md",
     ".claude/rules/03-USER.md",
     ".claude/rules/04-LEARNING-STATE.md",
+    ".claude/rules/05-LEARNING-MEMORY.md",
+    "UPDATE_MEMORY.md",
 ];
 const LEARNING_SEED_DIRS: [&str; 9] = [
     "inbox",
